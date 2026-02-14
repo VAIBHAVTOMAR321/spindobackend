@@ -2,8 +2,11 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import CustomerRegistrationSerializer, LoginSerializer
-
+from .serializers import CustomerRegistrationSerializer, LoginSerializer,StaffAdminRegistrationSerializer
+from rest_framework.permissions import IsAuthenticated
+from .authentication import CustomJWTAuthentication
+from .permissions import IsAdmin, IsAdminOrStaff
+from .models import StaffAdmin
 
 
 class CustomerRegistrationView(APIView):
@@ -43,3 +46,42 @@ class LoginView(APIView):
             "status": False,
             "errors": serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
+
+class StaffAdminRegistrationView(APIView):
+
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def get(self, request):
+        
+        # Check permission for GET (admin and staff only)
+        if not IsAdminOrStaff().has_permission(request, self):
+            return Response({
+                "status": False,
+                "message": "Only admin and staff can view staff records"
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        staffs = StaffAdmin.objects.all().values(
+            'id', 'unique_id', 'can_name', 'mobile_number', 
+            'email_id', 'address', 'created_at', 'updated_at'
+        )
+
+        return Response({
+            "status": True,
+            "data": list(staffs),
+            "count": staffs.count()
+        }, status=status.HTTP_200_OK)
+
+    def post(self, request):
+
+        serializer = StaffAdminRegistrationSerializer(data=request.data)
+
+        if serializer.is_valid():
+            serializer.save()
+
+            return Response({
+                "status": True,
+                "message": "Staff admin created successfully"
+            })
+
+        return Response(serializer.errors, status=400)
