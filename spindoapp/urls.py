@@ -5,7 +5,7 @@ from .views import CustomerRegistrationView, LoginView, StaffAdminRegistrationVi
 
 urlpatterns = [
 
-    path('customer/register/', CustomerRegistrationView.as_view()),
+    path('customer/register/', CustomerRegistrationView.as_view()),  # Supports GET with ?unique_id=USER-001
     path('staffadmin/register/', StaffAdminRegistrationView.as_view()),
 
     path('login/', LoginView.as_view()),

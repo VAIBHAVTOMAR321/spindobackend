@@ -35,7 +35,7 @@ class IsAdminOrStaff(BasePermission):
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
-        return request.user.role in ["admin", "staff"]
+        return request.user.role in ["admin", "staff", "staffadmin"]
 
 
 def check_admin_role(user):
@@ -59,4 +59,4 @@ def check_admin_or_staff_role(user):
     Utility function to check if user has admin or staff role.
     Returns True if user is admin or staff, False otherwise.
     """
-    return user and user.is_authenticated and user.role in ["admin", "staff"]
+    return user and user.is_authenticated and user.role in ["admin", "staff", "staffadmin"]
