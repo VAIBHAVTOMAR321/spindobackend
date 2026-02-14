@@ -13,7 +13,7 @@ class AllLog(models.Model):
 
     id = models.AutoField(primary_key=True)
 
-    unique_id = models.CharField(max_length=50, unique=True, editable=False)
+    unique_id = models.CharField(max_length=50, unique=True)
 
     phone = models.CharField(max_length=15, unique=True)
 
@@ -35,12 +35,6 @@ class AllLog(models.Model):
     REQUIRED_FIELDS = []
 
 
-    def save(self, *args, **kwargs):
-        if not self.unique_id:
-            self.unique_id = "LOG-" + str(uuid.uuid4())[:8]
-        super().save(*args, **kwargs)
-
-
     def __str__(self):
         return f"{self.phone} ({self.role})"
 
@@ -60,7 +54,7 @@ class RegisteredCustomer(models.Model):
 
     id = models.AutoField(primary_key=True)
 
-    auth_user = models.OneToOneField(AllLog, on_delete=models.CASCADE, related_name="customer_profile")
+    unique_id = models.CharField(max_length=50, unique=True,blank=True, null=True)
 
     username = models.CharField(max_length=150)
 
@@ -77,5 +71,22 @@ class RegisteredCustomer(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
 
+    def save(self, *args, **kwargs):
+
+        if not self.unique_id:
+
+            last_customer = RegisteredCustomer.objects.order_by('-id').first()
+
+            if last_customer:
+                last_number = int(last_customer.unique_id.split('-')[1])
+                new_number = last_number + 1
+            else:
+                new_number = 1
+
+            self.unique_id = f"USER-{new_number:03d}"
+
+        super().save(*args, **kwargs)
+
+
     def __str__(self):
-        return self.username
+        return f"{self.username} ({self.unique_id})"
