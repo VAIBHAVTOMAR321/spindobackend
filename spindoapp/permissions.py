@@ -38,6 +38,25 @@ class IsAdminOrStaff(BasePermission):
         return request.user.role in ["admin", "staff", "staffadmin"]
 
 
+class IsStaffAdminOwner(BasePermission):
+    """
+    Permission class to check if staffadmin can only access their own data.
+    """
+    message = "You can only access your own staff data."
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        # Admin can access all staff data
+        if request.user.role == "admin":
+            return True
+        # Staff admin can only access if unique_id is provided in query params
+        if request.user.role == "staffadmin":
+            unique_id = request.query_params.get('unique_id')
+            return unique_id is not None and unique_id == request.user.unique_id
+        return False
+
+
 def check_admin_role(user):
     """
     Utility function to check if user has admin role.
