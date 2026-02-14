@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from datetime import timedelta
 
 load_dotenv()
 
@@ -35,6 +36,18 @@ CORS_ALLOW_CREDENTIALS = True
 
 # Application definition
 
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+}
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
+
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+}
+
 INSTALLED_APPS = [
     "corsheaders",
     "django.contrib.admin",
@@ -44,6 +57,9 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "spindoapp",
+    'rest_framework',
+    'rest_framework.authtoken',
+
 ]
 
 
