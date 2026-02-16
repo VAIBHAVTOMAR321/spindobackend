@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from .serializers import (CustomerRegistrationSerializer, LoginSerializer, StaffAdminRegistrationSerializer,
                           RegisteredCustomerDetailSerializer, RegisteredCustomerListSerializer,
-                          StaffAdminDetailSerializer, StaffAdminListSerializer)
+                          StaffAdminDetailSerializer, StaffAdminListSerializer,VendorRegistrationSerializer)
 from rest_framework.permissions import IsAuthenticated
 from .authentication import CustomJWTAuthentication
 from .permissions import (IsAdmin, IsAdminOrStaff, IsStaffAdminOwner, check_admin_or_staff_role,
@@ -14,14 +14,14 @@ from .permissions import (IsAdmin, IsAdminOrStaff, IsStaffAdminOwner, check_admi
                           STAFF_NOT_FOUND, UNIQUE_ID_REQUIRED, UNIQUE_ID_REQUIRED_FOR_CUSTOMER,
                           UNIQUE_ID_REQUIRED_FOR_STAFF, EMAIL_ALREADY_REGISTERED, 
                           MOBILE_NUMBER_ALREADY_REGISTERED)
-from .models import StaffAdmin, RegisteredCustomer, AllLog
+from .models import StaffAdmin, RegisteredCustomer, AllLog, Vendor
 
 
 class CustomerRegistrationView(APIView):
 
 
-    authentication_classes = [CustomJWTAuthentication]
-    permission_classes = [IsAuthenticated]
+    # authentication_classes = [CustomJWTAuthentication]
+    # permission_classes = [IsAuthenticated]
 
     def post(self, request):
         serializer = CustomerRegistrationSerializer(data=request.data)
@@ -174,30 +174,11 @@ class StaffAdminRegistrationView(APIView):
         # Admin can view all staff with is_active field
         if request.user.role == "admin":
             staffs = StaffAdmin.objects.all()
-            data = []
-            for staff in staffs:
-                staff_data = {
-                    "id": staff.id,
-                    "unique_id": staff.unique_id,
-                    "can_name": staff.can_name,
-                    "mobile_number": staff.mobile_number,
-                    "email_id": staff.email_id,
-                    "address": staff.address,
-                    "created_at": staff.created_at,
-                    "updated_at": staff.updated_at,
-                }
-                try:
-                    log = AllLog.objects.get(unique_id=staff.unique_id)
-                    staff_data["is_active"] = log.is_active
-                except AllLog.DoesNotExist:
-                    staff_data["is_active"] = None
-                data.append(staff_data)
-            
-            serializer = StaffAdminListSerializer(data, many=True)
+            serializer = StaffAdminRegistrationSerializer(staffs, many=True)
             return Response({
                 "status": True,
                 "data": serializer.data,
-                "count": len(data)
+                "count": len(serializer.data)
             }, status=status.HTTP_200_OK)
         
         # Staff admin can only view their own data with unique_id
@@ -386,4 +367,159 @@ class StaffAdminRegistrationView(APIView):
             return Response({
                 "status": False,
                 "message": STAFF_NOT_FOUND
+            }, status=status.HTTP_404_NOT_FOUND)
+
+
+class VendorRegistrationView(APIView):
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        # Only staffadmin can register vendor
+        if not hasattr(request.user, 'role') or request.user.role != "staffadmin":
+            return Response({
+                "status": False,
+                "message": "Only staff can register vendors"
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = VendorRegistrationSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                "status": True,
+                "message": "Vendor registered successfully"
+            }, status=status.HTTP_201_CREATED)
+        return Response({
+            "status": False,
+            "errors": serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    def get(self, request):
+        unique_id = request.query_params.get('unique_id')
+        user_role = request.user.role if hasattr(request.user, 'role') else None
+
+        # Admin or staff: get all vendors
+        if user_role in ["admin", "staffadmin"]:
+            vendors = Vendor.objects.all()
+            serializer = VendorRegistrationSerializer(vendors, many=True)
+            data = serializer.data
+            if user_role == "staffadmin":
+                # Remove 'is_active' from each vendor dict for staffadmin
+                for item in data:
+                     item.pop("is_active", None)
+            return Response({
+                "status": True,
+                "data": data,
+                "count": len(data)
+            }, status=status.HTTP_200_OK)
+
+        # Vendor: get only own data
+        if user_role == "vendor":
+            if not unique_id:
+                return Response({
+                    "status": False,
+                    "message": "unique_id is required for vendor access"
+                }, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                vendor = Vendor.objects.get(unique_id=unique_id)
+                log = AllLog.objects.get(unique_id=unique_id)
+                if log.phone != request.user.phone:
+                    return Response({
+                        "status": False,
+                        "message": "You can only access your own data"
+                    }, status=status.HTTP_403_FORBIDDEN)
+                serializer = VendorRegistrationSerializer(vendor)
+                return Response({
+                    "status": True,
+                    "data": serializer.data
+                }, status=status.HTTP_200_OK)
+            except Vendor.DoesNotExist:
+                return Response({
+                    "status": False,
+                    "message": "Vendor not found"
+                }, status=status.HTTP_404_NOT_FOUND)
+        return Response({
+            "status": False,
+            "message": "Permission denied"
+        }, status=status.HTTP_403_FORBIDDEN)
+    
+    def put(self, request):
+        user_role = request.user.role if hasattr(request.user, 'role') else None
+        unique_id = request.data.get('unique_id')
+
+        if not unique_id:
+            return Response({
+                "status": False,
+                "message": "unique_id is required"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            vendor = Vendor.objects.get(unique_id=unique_id)
+            log = AllLog.objects.get(unique_id=unique_id)
+
+            # Vendor can only update own info except mobile_number
+            if user_role == "vendor":
+                if log.phone != request.user.phone:
+                    return Response({
+                        "status": False,
+                        "message": "You can only update your own data"
+                    }, status=status.HTTP_403_FORBIDDEN)
+                if 'mobile_number' in request.data and request.data['mobile_number'] != vendor.mobile_number:
+                    return Response({
+                        "status": False,
+                        "message": "Mobile number cannot be changed"
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                # Update allowed fields
+                for field in ['username', 'email', 'state', 'district', 'block', 'address', 'category', 'description']:
+                    if field in request.data:
+                        setattr(vendor, field, request.data[field])
+
+            # Staff can update all except mobile_number and is_active
+            elif user_role == "staffadmin":
+                if 'mobile_number' in request.data and request.data['mobile_number'] != vendor.mobile_number:
+                    return Response({
+                        "status": False,
+                        "message": "Mobile number cannot be changed"
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                if 'is_active' in request.data:
+                    return Response({
+                        "status": False,
+                        "message": "You cannot change active status"
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                for field in ['username', 'email', 'state', 'district', 'block', 'address', 'category', 'description']:
+                    if field in request.data:
+                        setattr(vendor, field, request.data[field])
+
+            # Admin can update all fields including mobile_number and is_active
+            elif user_role == "admin":
+                for field in ['username', 'email', 'state', 'district', 'block', 'address', 'category', 'description']:
+                    if field in request.data:
+                        setattr(vendor, field, request.data[field])
+                if 'mobile_number' in request.data:
+                    # Check if mobile number already exists
+                    if AllLog.objects.filter(phone=request.data['mobile_number']).exclude(unique_id=unique_id).exists():
+                        return Response({
+                            "status": False,
+                            "message": "Mobile number already registered"
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                    vendor.mobile_number = request.data['mobile_number']
+                    log.phone = request.data['mobile_number']
+                    log.save()
+                if 'is_active' in request.data:
+                    vendor.is_active = request.data['is_active']
+                    log.is_active = request.data['is_active']  # <-- Add this line
+                    log.save()                                 # <-- And this line
+                if 'is_active' in request.data:
+                    vendor.is_active = request.data['is_active']
+
+            vendor.save()
+            return Response({
+                "status": True,
+                "message": "Vendor details updated successfully"
+            }, status=status.HTTP_200_OK)
+
+        except Vendor.DoesNotExist:
+            return Response({
+                "status": False,
+                "message": "Vendor not found"
             }, status=status.HTTP_404_NOT_FOUND)

@@ -134,3 +134,35 @@ class StaffAdmin(models.Model):
 
     def __str__(self):
         return f"{self.can_name} ({self.unique_id})"
+    
+class Vendor(models.Model):
+    id = models.AutoField(primary_key=True)
+    unique_id = models.CharField(max_length=50, unique=True, blank=True, null=True)
+    username = models.CharField(max_length=150)
+    mobile_number = models.CharField(max_length=15, unique=True)
+    email = models.EmailField(unique=True)
+    state = models.CharField(max_length=100)
+    district = models.CharField(max_length=100)
+    block = models.CharField(max_length=100)
+    password = models.CharField(max_length=255)
+    aadhar_card = models.FileField(upload_to='vendor_aadhar/', blank=True, null=True)
+    address = models.TextField(blank=True, null=True)
+    category = models.JSONField(default=dict)  # For multiple fields
+    description = models.TextField(blank=True, null=True)
+    is_active = models.BooleanField(default=False)  # Vendor is inactive by default
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        if not self.unique_id:
+            last_vendor = Vendor.objects.order_by('-id').first()
+            if last_vendor:
+                last_number = int(last_vendor.unique_id.split('-')[1])
+                new_number = last_number + 1
+            else:
+                new_number = 1
+            self.unique_id = f"VENDOR-{new_number:03d}"
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.username} ({self.unique_id})"
