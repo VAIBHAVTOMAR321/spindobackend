@@ -1,6 +1,26 @@
 from rest_framework.permissions import BasePermission
 from rest_framework.exceptions import PermissionDenied
 
+# Permission Error Messages
+PERMISSION_DENIED = "Permission denied"
+ONLY_ADMIN_MESSAGE = "Only admin can access this resource."
+ONLY_STAFF_MESSAGE = "Only staff can access this resource."
+ONLY_ADMIN_OR_STAFF_MESSAGE = "Only admin or staff can access this resource."
+ONLY_ADMIN_CAN_CREATE_STAFF = "Only admin can create staff"
+ONLY_CUSTOMERS_CAN_UPDATE = "Only customers can update their own details"
+ONLY_ADMIN_AND_STAFF_CAN_UPDATE = "Only admin and staff can update staff details"
+ONLY_ACCESS_OWN_DATA = "You can only access your own data"
+ONLY_UPDATE_OWN_DATA = "You can only update your own data"
+MOBILE_NUMBER_CANNOT_CHANGE = "Mobile number cannot be changed"
+CANNOT_CHANGE_ACTIVE_STATUS = "You cannot change active status"
+CUSTOMER_NOT_FOUND = "Customer not found"
+STAFF_NOT_FOUND = "Staff not found"
+UNIQUE_ID_REQUIRED = "unique_id is required"
+UNIQUE_ID_REQUIRED_FOR_CUSTOMER = "unique_id is required for customer access"
+UNIQUE_ID_REQUIRED_FOR_STAFF = "unique_id is required for staff access"
+EMAIL_ALREADY_REGISTERED = "Email already registered"
+MOBILE_NUMBER_ALREADY_REGISTERED = "Mobile number already registered"
+
 
 class IsAdmin(BasePermission):
     """

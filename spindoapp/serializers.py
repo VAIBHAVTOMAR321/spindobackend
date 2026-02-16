@@ -139,3 +139,50 @@ class StaffAdminRegistrationSerializer(serializers.Serializer):
         )
 
         return staff
+
+
+# GET Response Serializers
+class RegisteredCustomerDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RegisteredCustomer
+        fields = ['id', 'unique_id', 'username', 'mobile_number', 'state', 'district', 'block', 'created_at', 'updated_at']
+
+
+class RegisteredCustomerListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RegisteredCustomer
+        fields = ['id', 'unique_id', 'username', 'mobile_number', 'state', 'district', 'block', 'created_at', 'updated_at']
+
+
+class StaffAdminDetailSerializer(serializers.SerializerMethodField):
+    class Meta:
+        model = StaffAdmin
+        fields = ['id', 'unique_id', 'can_name', 'mobile_number', 'email_id', 'address', 'created_at', 'updated_at']
+
+    def to_representation(self, instance):
+        data = {
+            'id': instance.id,
+            'unique_id': instance.unique_id,
+            'can_name': instance.can_name,
+            'mobile_number': instance.mobile_number,
+            'email_id': instance.email_id,
+            'address': instance.address,
+            'created_at': instance.created_at,
+            'updated_at': instance.updated_at
+        }
+        return data
+
+
+class StaffAdminListSerializer(serializers.Serializer):
+    """
+    Custom serializer for StaffAdmin list with is_active status from AllLog
+    """
+    id = serializers.IntegerField()
+    unique_id = serializers.CharField()
+    can_name = serializers.CharField()
+    mobile_number = serializers.CharField()
+    email_id = serializers.EmailField()
+    address = serializers.CharField()
+    created_at = serializers.DateTimeField()
+    updated_at = serializers.DateTimeField()
+    is_active = serializers.BooleanField(required=False, allow_null=True)

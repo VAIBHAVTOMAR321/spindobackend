@@ -2,10 +2,18 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import CustomerRegistrationSerializer, LoginSerializer,StaffAdminRegistrationSerializer
+from .serializers import (CustomerRegistrationSerializer, LoginSerializer, StaffAdminRegistrationSerializer,
+                          RegisteredCustomerDetailSerializer, RegisteredCustomerListSerializer,
+                          StaffAdminDetailSerializer, StaffAdminListSerializer)
 from rest_framework.permissions import IsAuthenticated
 from .authentication import CustomJWTAuthentication
-from .permissions import IsAdmin, IsAdminOrStaff, IsStaffAdminOwner, check_admin_or_staff_role
+from .permissions import (IsAdmin, IsAdminOrStaff, IsStaffAdminOwner, check_admin_or_staff_role,
+                          PERMISSION_DENIED, ONLY_ADMIN_CAN_CREATE_STAFF, ONLY_CUSTOMERS_CAN_UPDATE,
+                          ONLY_ADMIN_AND_STAFF_CAN_UPDATE, ONLY_ACCESS_OWN_DATA, ONLY_UPDATE_OWN_DATA,
+                          MOBILE_NUMBER_CANNOT_CHANGE, CANNOT_CHANGE_ACTIVE_STATUS, CUSTOMER_NOT_FOUND,
+                          STAFF_NOT_FOUND, UNIQUE_ID_REQUIRED, UNIQUE_ID_REQUIRED_FOR_CUSTOMER,
+                          UNIQUE_ID_REQUIRED_FOR_STAFF, EMAIL_ALREADY_REGISTERED, 
+                          MOBILE_NUMBER_ALREADY_REGISTERED)
 from .models import StaffAdmin, RegisteredCustomer, AllLog
 
 
@@ -34,12 +42,11 @@ class CustomerRegistrationView(APIView):
 
         # If user is admin or staff, return all users
         if check_admin_or_staff_role(request.user):
-            customers = RegisteredCustomer.objects.all().values(
-                'id', 'unique_id', 'username', 'mobile_number', 'state', 'district', 'block', 'created_at', 'updated_at'
-            )
+            customers = RegisteredCustomer.objects.all()
+            serializer = RegisteredCustomerListSerializer(customers, many=True)
             return Response({
                 "status": True,
-                "data": list(customers),
+                "data": serializer.data,
                 "count": customers.count()
             }, status=status.HTTP_200_OK)
 
@@ -48,7 +55,7 @@ class CustomerRegistrationView(APIView):
             if not unique_id:
                 return Response({
                     "status": False,
-                    "message": "unique_id is required for customer access"
+                    "message": UNIQUE_ID_REQUIRED_FOR_CUSTOMER
                 }, status=status.HTTP_400_BAD_REQUEST)
             try:
                 customer = RegisteredCustomer.objects.get(unique_id=unique_id)
@@ -57,31 +64,22 @@ class CustomerRegistrationView(APIView):
                 if log.phone != request.user.phone:
                     return Response({
                         "status": False,
-                        "message": "You can only access your own data"
+                        "message": ONLY_ACCESS_OWN_DATA
                     }, status=status.HTTP_403_FORBIDDEN)
-                data = {
-                    "id": customer.id,
-                    "unique_id": customer.unique_id,
-                    "username": customer.username,
-                    "mobile_number": customer.mobile_number,
-                    "state": customer.state,
-                    "district": customer.district,
-                    "block": customer.block,
-                    "created_at": customer.created_at,
-                    "updated_at": customer.updated_at
-                }
+                
+                serializer = RegisteredCustomerDetailSerializer(customer)
                 return Response({
                     "status": True,
-                    "data": data
+                    "data": serializer.data
                 }, status=status.HTTP_200_OK)
             except RegisteredCustomer.DoesNotExist:
                 return Response({
                     "status": False,
-                    "message": "Customer not found"
+                    "message": CUSTOMER_NOT_FOUND
                 }, status=status.HTTP_404_NOT_FOUND)
         return Response({
             "status": False,
-            "message": "Permission denied"
+            "message": PERMISSION_DENIED
         }, status=status.HTTP_403_FORBIDDEN)
 
     def put(self, request):
@@ -95,7 +93,7 @@ class CustomerRegistrationView(APIView):
         if user_role != "customer":
             return Response({
                 "status": False,
-                "message": "Only customers can update their own details"
+                "message": ONLY_CUSTOMERS_CAN_UPDATE
             }, status=status.HTTP_403_FORBIDDEN)
         
         unique_id = request.data.get('unique_id')
@@ -103,7 +101,7 @@ class CustomerRegistrationView(APIView):
         if not unique_id:
             return Response({
                 "status": False,
-                "message": "unique_id is required"
+                "message": UNIQUE_ID_REQUIRED
             }, status=status.HTTP_400_BAD_REQUEST)
         
         try:
@@ -113,14 +111,14 @@ class CustomerRegistrationView(APIView):
             if log.phone != request.user.phone:
                 return Response({
                     "status": False,
-                    "message": "You can only update your own data"
+                    "message": ONLY_UPDATE_OWN_DATA
                 }, status=status.HTTP_403_FORBIDDEN)
             
             # Check if user is trying to change mobile_number
             if 'mobile_number' in request.data and request.data['mobile_number'] != customer.mobile_number:
                 return Response({
                     "status": False,
-                    "message": "Mobile number cannot be changed"
+                    "message": MOBILE_NUMBER_CANNOT_CHANGE
                 }, status=status.HTTP_400_BAD_REQUEST)
             
             # Update allowed fields
@@ -135,28 +133,15 @@ class CustomerRegistrationView(APIView):
             
             customer.save()
             
-            data = {
-                "id": customer.id,
-                "unique_id": customer.unique_id,
-                "username": customer.username,
-                "mobile_number": customer.mobile_number,
-                "state": customer.state,
-                "district": customer.district,
-                "block": customer.block,
-                "created_at": customer.created_at,
-                "updated_at": customer.updated_at
-            }
-            
             return Response({
                 "status": True,
-                "message": "Customer details updated successfully",
-                "data": data
+                "message": "Customer details updated successfully"
             }, status=status.HTTP_200_OK)
             
         except RegisteredCustomer.DoesNotExist:
             return Response({
                 "status": False,
-                "message": "Customer not found"
+                "message": CUSTOMER_NOT_FOUND
             }, status=status.HTTP_404_NOT_FOUND)
 
 
@@ -191,12 +176,7 @@ class StaffAdminRegistrationView(APIView):
             staffs = StaffAdmin.objects.all()
             data = []
             for staff in staffs:
-                try:
-                    log = AllLog.objects.get(unique_id=staff.unique_id)
-                    is_active = log.is_active
-                except AllLog.DoesNotExist:
-                    is_active = None
-                data.append({
+                staff_data = {
                     "id": staff.id,
                     "unique_id": staff.unique_id,
                     "can_name": staff.can_name,
@@ -205,11 +185,18 @@ class StaffAdminRegistrationView(APIView):
                     "address": staff.address,
                     "created_at": staff.created_at,
                     "updated_at": staff.updated_at,
-                    "is_active": is_active
-                })
+                }
+                try:
+                    log = AllLog.objects.get(unique_id=staff.unique_id)
+                    staff_data["is_active"] = log.is_active
+                except AllLog.DoesNotExist:
+                    staff_data["is_active"] = None
+                data.append(staff_data)
+            
+            serializer = StaffAdminListSerializer(data, many=True)
             return Response({
                 "status": True,
-                "data": data,
+                "data": serializer.data,
                 "count": len(data)
             }, status=status.HTTP_200_OK)
         
@@ -218,41 +205,32 @@ class StaffAdminRegistrationView(APIView):
             if not unique_id:
                 return Response({
                     "status": False,
-                    "message": "unique_id is required for staff access"
+                    "message": UNIQUE_ID_REQUIRED_FOR_STAFF
                 }, status=status.HTTP_400_BAD_REQUEST)
             
             # Check if the unique_id matches the staff member's own unique_id
             if unique_id != request.user.unique_id:
                 return Response({
                     "status": False,
-                    "message": "You can only access your own data"
+                    "message": ONLY_ACCESS_OWN_DATA
                 }, status=status.HTTP_403_FORBIDDEN)
             
             try:
                 staff = StaffAdmin.objects.get(unique_id=unique_id)
-                data = {
-                    "id": staff.id,
-                    "unique_id": staff.unique_id,
-                    "can_name": staff.can_name,
-                    "mobile_number": staff.mobile_number,
-                    "email_id": staff.email_id,
-                    "address": staff.address,
-                    "created_at": staff.created_at,
-                    "updated_at": staff.updated_at
-                }
+                serializer = StaffAdminDetailSerializer()
                 return Response({
                     "status": True,
-                    "data": data
+                    "data": serializer.to_representation(staff)
                 }, status=status.HTTP_200_OK)
             except StaffAdmin.DoesNotExist:
                 return Response({
                     "status": False,
-                    "message": "Staff not found"
+                    "message": STAFF_NOT_FOUND
                 }, status=status.HTTP_404_NOT_FOUND)
         
         return Response({
             "status": False,
-            "message": "Permission denied"
+            "message": PERMISSION_DENIED
         }, status=status.HTTP_403_FORBIDDEN)
 
     def post(self, request):
@@ -260,7 +238,7 @@ class StaffAdminRegistrationView(APIView):
         if request.user.role != "admin":
             return Response({
                 "status": False,
-                "message": "Only admin can create staff"
+                "message": ONLY_ADMIN_CAN_CREATE_STAFF
             }, status=status.HTTP_403_FORBIDDEN)
 
         serializer = StaffAdminRegistrationSerializer(data=request.data)
@@ -290,7 +268,7 @@ class StaffAdminRegistrationView(APIView):
         if user_role not in ["admin", "staffadmin"]:
             return Response({
                 "status": False,
-                "message": "Only admin and staff can update staff details"
+                "message": ONLY_ADMIN_AND_STAFF_CAN_UPDATE
             }, status=status.HTTP_403_FORBIDDEN)
         
         unique_id = request.data.get('unique_id')
@@ -298,7 +276,7 @@ class StaffAdminRegistrationView(APIView):
         if not unique_id:
             return Response({
                 "status": False,
-                "message": "unique_id is required"
+                "message": UNIQUE_ID_REQUIRED
             }, status=status.HTTP_400_BAD_REQUEST)
         
         try:
@@ -309,21 +287,21 @@ class StaffAdminRegistrationView(APIView):
                 if request.user.unique_id != unique_id:
                     return Response({
                         "status": False,
-                        "message": "You can only update your own data"
+                        "message": ONLY_UPDATE_OWN_DATA
                     }, status=status.HTTP_403_FORBIDDEN)
                 
                 # Staffadmin cannot change mobile_number
                 if 'mobile_number' in request.data and request.data['mobile_number'] != staff.mobile_number:
                     return Response({
                         "status": False,
-                        "message": "Mobile number cannot be changed"
+                        "message": MOBILE_NUMBER_CANNOT_CHANGE
                     }, status=status.HTTP_400_BAD_REQUEST)
                 
                 # Staffadmin cannot change is_active
                 if 'is_active' in request.data:
                     return Response({
                         "status": False,
-                        "message": "You cannot change active status"
+                        "message": CANNOT_CHANGE_ACTIVE_STATUS
                     }, status=status.HTTP_400_BAD_REQUEST)
                 
                 # Update allowed fields for staff: can_name, email_id, address, can_aadharcard
@@ -334,7 +312,7 @@ class StaffAdminRegistrationView(APIView):
                     if AllLog.objects.filter(email=request.data['email_id']).exclude(unique_id=unique_id).exists():
                         return Response({
                             "status": False,
-                            "message": "Email already registered"
+                            "message": EMAIL_ALREADY_REGISTERED
                         }, status=status.HTTP_400_BAD_REQUEST)
                     staff.email_id = request.data['email_id']
                     # Also update in AllLog
@@ -360,7 +338,7 @@ class StaffAdminRegistrationView(APIView):
                     if AllLog.objects.filter(email=request.data['email_id']).exclude(unique_id=unique_id).exists():
                         return Response({
                             "status": False,
-                            "message": "Email already registered"
+                            "message": EMAIL_ALREADY_REGISTERED
                         }, status=status.HTTP_400_BAD_REQUEST)
                     staff.email_id = request.data['email_id']
                     # Also update in AllLog
@@ -377,7 +355,7 @@ class StaffAdminRegistrationView(APIView):
                     if StaffAdmin.objects.filter(mobile_number=request.data['mobile_number']).exclude(unique_id=unique_id).exists():
                         return Response({
                             "status": False,
-                            "message": "Mobile number already registered"
+                            "message": MOBILE_NUMBER_ALREADY_REGISTERED
                         }, status=status.HTTP_400_BAD_REQUEST)
                     staff.mobile_number = request.data['mobile_number']
                     # Also update in AllLog
@@ -399,36 +377,13 @@ class StaffAdminRegistrationView(APIView):
             
             staff.save()
             
-            # Get is_active status for response
-            try:
-                alllog = AllLog.objects.get(unique_id=unique_id)
-                is_active = alllog.is_active
-            except AllLog.DoesNotExist:
-                is_active = None
-            
-            data = {
-                "id": staff.id,
-                "unique_id": staff.unique_id,
-                "can_name": staff.can_name,
-                "mobile_number": staff.mobile_number,
-                "email_id": staff.email_id,
-                "address": staff.address,
-                "created_at": staff.created_at,
-                "updated_at": staff.updated_at
-            }
-            
-            # Include is_active only for admin
-            if user_role == "admin":
-                data["is_active"] = is_active
-            
             return Response({
                 "status": True,
-                "message": "Staff details updated successfully",
-                "data": data
+                "message": "Staff details updated successfully"
             }, status=status.HTTP_200_OK)
             
         except StaffAdmin.DoesNotExist:
             return Response({
                 "status": False,
-                "message": "Staff not found"
+                "message": STAFF_NOT_FOUND
             }, status=status.HTTP_404_NOT_FOUND)
