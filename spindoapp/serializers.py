@@ -1,4 +1,3 @@
-# serializers.py (add this)
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.hashers import check_password, make_password
 from rest_framework import serializers
@@ -51,7 +50,7 @@ class CustomerRegistrationSerializer(serializers.ModelSerializer):
     class Meta:
         model = RegisteredCustomer
         fields = '__all__'
-        read_only_fields = ('id', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'created_at', 'updated_at','unique_id')
 
     def validate_mobile_number(self, value):
         if AllLog.objects.filter(phone=value).exists():
@@ -82,7 +81,7 @@ class StaffAdminRegistrationSerializer(serializers.ModelSerializer):
     class Meta:
         model = StaffAdmin
         fields = '__all__'
-        read_only_fields = ('id', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'created_at', 'updated_at','unique_id')
 
     def validate_mobile_number(self, value):
         if AllLog.objects.filter(phone=value).exists():
@@ -103,7 +102,7 @@ class StaffAdminRegistrationSerializer(serializers.ModelSerializer):
             mobile_number=phone,
             email_id=email,
             address=validated_data['address'],
-            can_aadharcard=validated_data['can_aadharcard'],
+            can_aadharcard=validated_data.get('can_aadharcard', None),
         )
         AllLog.objects.create(
             unique_id=staff.unique_id,
@@ -121,26 +120,26 @@ class RegisteredCustomerDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = RegisteredCustomer
         fields = '__all__'
-        read_only_fields = ('id', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'created_at', 'updated_at','unique_id')
 
 class RegisteredCustomerListSerializer(serializers.ModelSerializer):
     class Meta:
         model = RegisteredCustomer
         fields = '__all__'
-        read_only_fields = ('id', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'created_at', 'updated_at','unique_id')
 
 class StaffAdminDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = StaffAdmin
         fields = '__all__'
-        read_only_fields = ('id', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'created_at', 'updated_at','unique_id')
 
 class StaffAdminListSerializer(serializers.ModelSerializer):
     is_active = serializers.BooleanField(required=False, allow_null=True)
     class Meta:
         model = StaffAdmin
         fields = '__all__'
-        read_only_fields = ('id', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'created_at', 'updated_at','unique_id')
 
 class VendorRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
@@ -151,7 +150,7 @@ class VendorRegistrationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Vendor
         fields = '__all__'
-        read_only_fields = ('id', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'created_at', 'updated_at','unique_id')
 
     def validate_mobile_number(self, value):
         if AllLog.objects.filter(phone=value).exists():
