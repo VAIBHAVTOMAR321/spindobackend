@@ -166,3 +166,21 @@ class Vendor(models.Model):
 
     def __str__(self):
         return f"{self.username} ({self.unique_id})"
+    
+class ServiceCategory(models.Model):
+    STATUS_CHOICES = (
+        ('accepted', 'Accepted'),
+        ('draft', 'Draft'),
+    )
+    id = models.AutoField(primary_key=True)
+    prod_name = models.CharField(max_length=255)
+    prod_desc = models.TextField(blank=True, null=True)
+    prod_img = models.ImageField(upload_to='service_category/', blank=True, null=True)
+    prod_cate = models.CharField(max_length=255)
+    sub_cate = models.CharField(max_length=255)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='draft')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.prod_name

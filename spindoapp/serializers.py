@@ -3,7 +3,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.hashers import check_password, make_password
 from rest_framework import serializers
 from django.db import transaction
-from .models import AllLog, RegisteredCustomer, StaffAdmin, Vendor
+from .models import AllLog, RegisteredCustomer, ServiceCategory, StaffAdmin, Vendor
 
 
 class LoginSerializer(serializers.Serializer):
@@ -180,3 +180,9 @@ class VendorRegistrationSerializer(serializers.ModelSerializer):
             is_active=False
         )
         return vendor
+    
+class ServiceCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ServiceCategory
+        fields = '__all__'
+        read_only_fields = ('id', 'created_at', 'updated_at')

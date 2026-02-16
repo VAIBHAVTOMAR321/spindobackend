@@ -2,9 +2,11 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.permissions import AllowAny
+from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 from .serializers import (CustomerRegistrationSerializer, LoginSerializer, StaffAdminRegistrationSerializer,
                           RegisteredCustomerDetailSerializer, RegisteredCustomerListSerializer,
-                          StaffAdminDetailSerializer, StaffAdminListSerializer,VendorRegistrationSerializer)
+                          StaffAdminDetailSerializer, StaffAdminListSerializer,VendorRegistrationSerializer,ServiceCategorySerializer)
 from rest_framework.permissions import IsAuthenticated
 from .authentication import CustomJWTAuthentication
 from .permissions import (IsAdmin, IsAdminOrStaff, IsStaffAdminOwner, check_admin_or_staff_role,
@@ -14,9 +16,28 @@ from .permissions import (IsAdmin, IsAdminOrStaff, IsStaffAdminOwner, check_admi
                           STAFF_NOT_FOUND, UNIQUE_ID_REQUIRED, UNIQUE_ID_REQUIRED_FOR_CUSTOMER,
                           UNIQUE_ID_REQUIRED_FOR_STAFF, EMAIL_ALREADY_REGISTERED, 
                           MOBILE_NUMBER_ALREADY_REGISTERED)
-from .models import StaffAdmin, RegisteredCustomer, AllLog, Vendor
+from .models import StaffAdmin, RegisteredCustomer, AllLog, Vendor,ServiceCategory
 
+class CustomTokenRefreshView(APIView):
+    authentication_classes = []
+    permission_classes = []
 
+    def post(self, request):
+        refresh_token = request.data.get("refresh")
+        if not refresh_token:
+            return Response({"status": False, "message": "Refresh token is required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            refresh = RefreshToken(refresh_token)
+            access_token = str(refresh.access_token)
+            return Response({
+                "status": True,
+                "access": access_token
+            }, status=status.HTTP_200_OK)
+        except TokenError as e:
+            return Response({
+                "status": False,
+                "message": "Invalid or expired refresh token"
+            }, status=status.HTTP_401_UNAUTHORIZED)
 class CustomerRegistrationView(APIView):
 
 
@@ -523,3 +544,52 @@ class VendorRegistrationView(APIView):
                 "status": False,
                 "message": "Vendor not found"
             }, status=status.HTTP_404_NOT_FOUND)
+        
+class ServiceCategoryView(APIView):
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [AllowAny()]
+        return [IsAuthenticated()]
+
+    def get(self, request):
+        categories = ServiceCategory.objects.all()
+        serializer = ServiceCategorySerializer(categories, many=True)
+        return Response({"status": True, "data": serializer.data}, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        if not hasattr(request.user, 'role') or request.user.role != "admin":
+            return Response({"status": False, "message": "Only admin can create category"}, status=status.HTTP_403_FORBIDDEN)
+        serializer = ServiceCategorySerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"status": True, "message": "Category created successfully"}, status=status.HTTP_201_CREATED)
+        return Response({"status": False, "errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    def put(self, request):
+        if not hasattr(request.user, 'role') or request.user.role != "admin":
+            return Response({"status": False, "message": "Only admin can update category"}, status=status.HTTP_403_FORBIDDEN)
+        category_id = request.data.get('id')
+        if not category_id:
+            return Response({"status": False, "message": "id is required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            category = ServiceCategory.objects.get(id=category_id)
+        except ServiceCategory.DoesNotExist:
+            return Response({"status": False, "message": "Category not found"}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ServiceCategorySerializer(category, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"status": True, "message": "Category updated successfully"}, status=status.HTTP_200_OK)
+        return Response({"status": False, "errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request):
+        if not hasattr(request.user, 'role') or request.user.role != "admin":
+            return Response({"status": False, "message": "Only admin can delete category"}, status=status.HTTP_403_FORBIDDEN)
+        category_id = request.data.get('id')
+        if not category_id:
+            return Response({"status": False, "message": "id is required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            category = ServiceCategory.objects.get(id=category_id)
+            category.delete()
+            return Response({"status": True, "message": "Category deleted successfully"}, status=status.HTTP_200_OK)
+        except ServiceCategory.DoesNotExist:
+            return Response({"status": False, "message": "Category not found"}, status=status.HTTP_404_NOT_FOUND)
