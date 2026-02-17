@@ -134,3 +134,27 @@ class IsAdminOrCustomerFromAllLog(BasePermission):
             raise PermissionDenied("You don't have permission to perform this action.")
 
         return True
+class IsAdminOrStaffAdminFromAllLog(BasePermission):
+
+    def has_permission(self, request, view):
+
+        if not request.user or not request.user.is_authenticated:
+            raise PermissionDenied("Authentication credentials were not provided.")
+
+       
+        if request.user.role == "admin":
+            return True
+
+       
+        if request.user.role == "staffadmin":
+            unique_id = request.query_params.get("unique_id")
+
+            if unique_id and unique_id == request.user.unique_id:
+                return True
+
+            raise PermissionDenied(
+                "StaffAdmin can only access their own data using unique_id."
+            )
+
+       
+        raise PermissionDenied("You don't have permission to perform this action.")

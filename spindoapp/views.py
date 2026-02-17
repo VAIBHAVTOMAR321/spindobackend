@@ -4,19 +4,19 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
-from .serializers import (CustomerIssueSerializer, CustomerRegistrationSerializer, LoginSerializer, StaffAdminRegistrationSerializer,
+from .serializers import (CustomerIssueSerializer, CustomerRegistrationSerializer, LoginSerializer, ServiceRequestByUserSerializer, StaffAdminRegistrationSerializer,
                           RegisteredCustomerDetailSerializer, RegisteredCustomerListSerializer,
                           StaffAdminDetailSerializer, StaffAdminListSerializer,VendorRegistrationSerializer,ServiceCategorySerializer,VendorRequestSerializer)
 from rest_framework.permissions import IsAuthenticated
 from .authentication import CustomJWTAuthentication
-from .permissions import (IsAdmin, IsAdminFromAllLog, IsAdminOrCustomerFromAllLog, IsAdminOrStaff, IsCustomerFromAllLog, IsStaffAdminOwner, check_admin_or_staff_role,
+from .permissions import (IsAdmin, IsAdminFromAllLog, IsAdminOrCustomerFromAllLog, IsAdminOrStaff, IsAdminOrStaffAdminFromAllLog, IsCustomerFromAllLog, IsStaffAdminOwner, check_admin_or_staff_role,
                           PERMISSION_DENIED, ONLY_ADMIN_CAN_CREATE_STAFF, ONLY_CUSTOMERS_CAN_UPDATE,
                           ONLY_ADMIN_AND_STAFF_CAN_UPDATE, ONLY_ACCESS_OWN_DATA, ONLY_UPDATE_OWN_DATA,
                           MOBILE_NUMBER_CANNOT_CHANGE, CANNOT_CHANGE_ACTIVE_STATUS, CUSTOMER_NOT_FOUND,
                           STAFF_NOT_FOUND, UNIQUE_ID_REQUIRED, UNIQUE_ID_REQUIRED_FOR_CUSTOMER,
                           UNIQUE_ID_REQUIRED_FOR_STAFF, EMAIL_ALREADY_REGISTERED, 
                           MOBILE_NUMBER_ALREADY_REGISTERED)
-from .models import CustomerIssue, StaffAdmin, RegisteredCustomer, AllLog, Vendor,ServiceCategory, VendorRequest
+from .models import CustomerIssue, ServiceRequestByUser, StaffAdmin, RegisteredCustomer, AllLog, Vendor,ServiceCategory, VendorRequest
 
 class CustomTokenRefreshView(APIView):
     authentication_classes = []
@@ -145,6 +145,10 @@ class CustomerRegistrationView(APIView):
             # Update allowed fields
             if 'username' in request.data:
                 customer.username = request.data['username']
+            if 'email' in request.data:
+                customer.email = request.data['email']
+            if 'image' in request.FILES:
+                customer.image = request.FILES['image']
             if 'state' in request.data:
                 customer.state = request.data['state']
             if 'district' in request.data:
@@ -667,8 +671,9 @@ class CustomerIssueAPIView(APIView):
         return []
 
     def get(self, request):
-        if request.user.role == "customer":
-            issues = CustomerIssue.objects.filter(user=request.user)
+        if unique_id := request.query_params.get("unique_id"):
+            issues = CustomerIssue.objects.filter(unique_id=unique_id)
+
         else:
             issues = CustomerIssue.objects.all()
 
@@ -756,3 +761,260 @@ class CustomerIssueAPIView(APIView):
                 {"status": False, "message": "Issue not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
+class ServiceRequestAPIView(APIView):
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [IsAuthenticated()]
+        elif self.request.method == "POST":
+            return [IsCustomerFromAllLog()]
+        elif self.request.method in ["PUT", "PATCH"]:
+            return [IsCustomerFromAllLog()]
+        elif self.request.method == "DELETE":
+            return [IsAdminFromAllLog()]
+        return []
+
+    # 🔹 GET
+    def get(self, request):
+
+        if request.user.role == "customer":
+            requests = ServiceRequestByUser.objects.filter(
+                unique_id=request.user.unique_id
+            )
+
+        elif request.user.role in ["admin", "staffadmin"]:
+            requests = ServiceRequestByUser.objects.all()
+
+        elif request.user.role == "vendor":
+            requests = ServiceRequestByUser.objects.filter(
+                assign_to=request.user.unique_id
+            )
+
+        else:
+            return Response(
+                {"status": False, "message": "Not allowed"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        serializer = ServiceRequestByUserSerializer(requests, many=True)
+
+        return Response(
+            {"status": True, "data": serializer.data},
+            status=status.HTTP_200_OK
+        )
+
+    # 🔹 POST (Customer Create)
+    def post(self, request):
+
+        serializer = ServiceRequestByUserSerializer(data=request.data)
+
+        if serializer.is_valid():
+            serializer.save(
+                unique_id=request.user.unique_id,
+                username=request.user.username
+            )
+
+            return Response(
+                {"status": True, "message": "Request created successfully"},
+                status=status.HTTP_201_CREATED
+            )
+
+        return Response(
+            {"status": False, "errors": serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # 🔹 PUT (Customer Update Own Request)
+    def put(self, request):
+
+        request_id = request.data.get("id")
+
+        if not request_id:
+            return Response(
+                {"status": False, "message": "id is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            service = ServiceRequestByUser.objects.get(id=request_id)
+        except ServiceRequestByUser.DoesNotExist:
+            return Response(
+                {"status": False, "message": "Request not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Only owner can update
+        if service.unique_id != request.user.unique_id:
+            return Response(
+                {"status": False, "message": "You can update only your request"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Prevent edit after assignment
+        if service.status != "pending":
+            return Response(
+                {"status": False, "message": "Cannot edit after assignment"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = ServiceRequestByUserSerializer(
+            service,
+            data=request.data,
+            partial=True
+        )
+
+        if serializer.is_valid():
+            serializer.save()
+
+            return Response(
+                {"status": True, "message": "Request updated successfully"},
+                status=status.HTTP_200_OK
+            )
+
+        return Response(
+            {"status": False, "errors": serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # 🔹 DELETE (Admin Only)
+    def delete(self, request):
+
+        request_id = request.data.get("id")
+
+        if not request_id:
+            return Response(
+                {"status": False, "message": "id is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            service = ServiceRequestByUser.objects.get(id=request_id)
+            service.delete()
+
+            return Response(
+                {"status": True, "message": "Deleted successfully"},
+                status=status.HTTP_200_OK
+            )
+
+        except ServiceRequestByUser.DoesNotExist:
+            return Response(
+                {"status": False, "message": "Request not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+class AssignVendorAPIView(APIView):
+    permission_classes = [IsAdminOrStaffAdminFromAllLog]
+
+    def post(self, request):
+
+        service_id = request.data.get("request_id")
+        vendor_unique_id = request.data.get("vendor_unique_id")
+
+        # 🔹 Validate input
+        if not service_id or not vendor_unique_id:
+            return Response(
+                {
+                    "status": False,
+                    "message": "service_id and vendor_unique_id are required"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 🔹 Get Service Request
+        service = ServiceRequestByUser.objects.filter(request_id=service_id).first()
+
+        # 🔹 Get Vendor
+        try:
+            vendor = Vendor.objects.get(unique_id=vendor_unique_id)
+        except Vendor.DoesNotExist:
+            return Response(
+                {
+                    "status": False,
+                    "message": "Vendor not found"
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if not service:
+            return Response(
+                {
+                    "status": False,
+                    "message": "Service request not found"
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # 🔹 Assign Vendor (IMPORTANT FIX)
+        service.assign_to_id = vendor.unique_id   # ✅ Correct way
+        service.assigned_to_name = vendor.username
+
+        # 🔹 Assigned By
+        service.assigned_by = request.user
+
+        if request.user.role == "admin":
+            service.assigned_by_name = "Admin"
+
+        elif request.user.role == "staffadmin":
+            try:
+                staff = StaffAdmin.objects.get(unique_id=request.user.unique_id)
+                service.assigned_by_name = staff.can_name
+            except StaffAdmin.DoesNotExist:
+                service.assigned_by_name = "Staff Admin"
+
+        # 🔹 Update Status
+        service.status = "assigned"
+        service.save()
+
+        return Response(
+            {
+                "status": True,
+                "message": "Vendor assigned successfully"
+                
+            },
+            status=status.HTTP_200_OK
+        )
+from rest_framework.decorators import api_view
+@api_view(['GET'])
+def get_categories(request):
+
+    # Fetch only accepted records
+    services = ServiceCategory.objects.filter(status='accepted')
+
+    category_dict = {}
+
+    for service in services:
+        category = service.prod_cate
+        subcategory = service.sub_cate
+
+        if category not in category_dict:
+            category_dict[category] = set()
+
+        category_dict[category].add(subcategory)
+
+    # Convert to response format
+    response_data = [
+        {
+            "category": category,
+            "subcategories": list(subcategories)
+        }
+        for category, subcategories in category_dict.items()
+    ]
+
+    return Response(
+        {
+            "status": True,
+            "data": response_data
+        },
+        status=status.HTTP_200_OK
+    )
+
+@api_view(['GET'])
+def get_all_vendors(request):
+    vendors = Vendor.objects.all().values('unique_id','username','address','category')
+
+    return Response(
+        {
+            "status": True,
+            "data": list(vendors)
+        },
+        status=status.HTTP_200_OK
+    )

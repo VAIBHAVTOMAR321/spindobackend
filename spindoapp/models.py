@@ -221,3 +221,43 @@ class CustomerIssue(models.Model):
 
     def __str__(self):
         return f"{self.name} - {self.title}"
+class ServiceRequestByUser(models.Model):
+    STATUS_CHOICES = (('pending', 'Pending'),('assigned', 'Assigned'),('completed', 'Completed'),('cancelled', 'Cancelled'))
+    username = models.CharField(max_length=150,blank=True, null=True)
+    request_id = models.CharField(max_length=20, unique=True, blank=True)
+    unique_id = models.CharField(max_length=50, blank=True, null=True)
+    contact_number = models.CharField(max_length=15,blank=True, null=True)
+    email = models.EmailField(blank=True, null=True)
+    state = models.CharField(max_length=100,blank=True, null=True)
+    district = models.CharField(max_length=100,blank=True, null=True)
+    block = models.CharField(max_length=100,blank=True, null=True)
+    address = models.TextField(blank=True, null=True)
+    request_for_services = models.JSONField(default=dict,blank=True,null=True)  # For multiple fields
+    schedule_date = models.DateField(blank=True, null=True)
+    schedule_time = models.TimeField(null=True, blank=True)
+    description = models.TextField(blank=True, null=True)
+    status = models.CharField(max_length=20,choices=STATUS_CHOICES,default='pending')
+    assign_to = models.ForeignKey( AllLog,on_delete=models.SET_NULL,null=True,blank=True,to_field='unique_id',related_name="assigned_vendor")
+    assigned_to_name = models.CharField(max_length=150, null=True, blank=True)
+    assigned_by = models.ForeignKey(AllLog,on_delete=models.SET_NULL,null=True,blank=True, related_name="assigned_by_admin")
+    assigned_by_name = models.CharField(max_length=150, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    def save(self, *args, **kwargs):
+
+        if not self.request_id:
+
+            last_request = ServiceRequestByUser.objects.order_by('-id').first()
+
+            if last_request and last_request.request_id:
+                last_number = int(last_request.request_id.split('-')[1])
+                new_number = last_number + 1
+            else:
+                new_number = 1
+
+            self.request_id = f"REQ-{new_number:03d}"
+
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.request_id} - {self.username}"
