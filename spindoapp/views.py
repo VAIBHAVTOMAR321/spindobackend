@@ -6,7 +6,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 from .serializers import (CustomerRegistrationSerializer, LoginSerializer, StaffAdminRegistrationSerializer,
                           RegisteredCustomerDetailSerializer, RegisteredCustomerListSerializer,
-                          StaffAdminDetailSerializer, StaffAdminListSerializer,VendorRegistrationSerializer,ServiceCategorySerializer)
+                          StaffAdminDetailSerializer, StaffAdminListSerializer,VendorRegistrationSerializer,ServiceCategorySerializer,VendorRequestSerializer)
 from rest_framework.permissions import IsAuthenticated
 from .authentication import CustomJWTAuthentication
 from .permissions import (IsAdmin, IsAdminOrStaff, IsStaffAdminOwner, check_admin_or_staff_role,
@@ -16,7 +16,7 @@ from .permissions import (IsAdmin, IsAdminOrStaff, IsStaffAdminOwner, check_admi
                           STAFF_NOT_FOUND, UNIQUE_ID_REQUIRED, UNIQUE_ID_REQUIRED_FOR_CUSTOMER,
                           UNIQUE_ID_REQUIRED_FOR_STAFF, EMAIL_ALREADY_REGISTERED, 
                           MOBILE_NUMBER_ALREADY_REGISTERED)
-from .models import StaffAdmin, RegisteredCustomer, AllLog, Vendor,ServiceCategory
+from .models import StaffAdmin, RegisteredCustomer, AllLog, Vendor,ServiceCategory, VendorRequest
 
 class CustomTokenRefreshView(APIView):
     authentication_classes = []
@@ -593,3 +593,64 @@ class ServiceCategoryView(APIView):
             return Response({"status": True, "message": "Category deleted successfully"}, status=status.HTTP_200_OK)
         except ServiceCategory.DoesNotExist:
             return Response({"status": False, "message": "Category not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+class VendorRequestView(APIView):
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [IsAuthenticated()]
+        return [IsAuthenticated()]
+
+    def get(self, request):
+        # Only admin can get all requests
+        if not hasattr(request.user, 'role') or request.user.role != "admin":
+            return Response({"status": False, "message": "Only admin can view requests"}, status=status.HTTP_403_FORBIDDEN)
+        requests = VendorRequest.objects.all()
+        serializer = VendorRequestSerializer(requests, many=True)
+        return Response({"status": True, "data": serializer.data}, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        # Only vendor can post
+        if not hasattr(request.user, 'role') or request.user.role != "vendor":
+            return Response({"status": False, "message": "Only vendor can create request"}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            vendor = Vendor.objects.get(unique_id=request.user.unique_id)
+        except Vendor.DoesNotExist:
+            return Response({"status": False, "message": "Vendor not found"}, status=status.HTTP_404_NOT_FOUND)
+        data = request.data.copy()
+        data['vendor'] = vendor.unique_id
+        serializer = VendorRequestSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"status": True, "message": "Request created successfully"}, status=status.HTTP_201_CREATED)
+        return Response({"status": False, "errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    def put(self, request):
+        # Only admin can update status
+        if not hasattr(request.user, 'role') or request.user.role != "admin":
+            return Response({"status": False, "message": "Only admin can update request"}, status=status.HTTP_403_FORBIDDEN)
+        req_id = request.data.get('id')
+        if not req_id:
+            return Response({"status": False, "message": "id is required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            req = VendorRequest.objects.get(id=req_id)
+        except VendorRequest.DoesNotExist:
+            return Response({"status": False, "message": "Request not found"}, status=status.HTTP_404_NOT_FOUND)
+        if 'status' not in request.data:
+            return Response({"status": False, "message": "status is required"}, status=status.HTTP_400_BAD_REQUEST)
+        req.status = request.data['status']
+        req.save()
+        return Response({"status": True, "message": "Request status updated successfully"}, status=status.HTTP_200_OK)
+
+    def delete(self, request):
+        # Only admin can delete
+        if not hasattr(request.user, 'role') or request.user.role != "admin":
+            return Response({"status": False, "message": "Only admin can delete request"}, status=status.HTTP_403_FORBIDDEN)
+        req_id = request.data.get('id')
+        if not req_id:
+            return Response({"status": False, "message": "id is required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            req = VendorRequest.objects.get(id=req_id)
+            req.delete()
+            return Response({"status": True, "message": "Request deleted successfully"}, status=status.HTTP_200_OK)
+        except VendorRequest.DoesNotExist:
+            return Response({"status": False, "message": "Request not found"}, status=status.HTTP_404_NOT_FOUND)

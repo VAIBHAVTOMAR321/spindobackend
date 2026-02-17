@@ -184,3 +184,23 @@ class ServiceCategory(models.Model):
 
     def __str__(self):
         return self.prod_name
+    
+class VendorRequest(models.Model):
+    STATUS_CHOICES = (
+        ('approved', 'Approved'),
+        ('pending', 'Pending'),
+        ('rejected', 'Rejected'),
+    )
+    id = models.AutoField(primary_key=True)
+    vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE,to_field='unique_id')
+    username = models.CharField(max_length=150)
+    title = models.CharField(max_length=255)
+    issue = models.TextField()
+    issue_image = models.ImageField(upload_to='vendor_issues/', blank=True, null=True)
+    remarks = models.TextField(blank=True, null=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.title} ({self.vendor.unique_id})"
