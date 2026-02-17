@@ -1,7 +1,7 @@
 # urls.py
 
 from django.urls import path
-from .views import CustomerRegistrationView,CustomTokenRefreshView, LoginView, StaffAdminRegistrationView, VendorRegistrationView, ServiceCategoryView, VendorRequestView
+from .views import CustomerIssueView, CustomerRegistrationView,CustomTokenRefreshView, LoginView, StaffAdminRegistrationView, VendorRegistrationView, ServiceCategoryView, VendorRequestView
 urlpatterns = [
 
     path('customer/register/', CustomerRegistrationView.as_view()),  # Supports GET with ?unique_id=USER-001
@@ -11,5 +11,6 @@ urlpatterns = [
     path('token/refresh/', CustomTokenRefreshView.as_view()),
     path('vendor/request/', VendorRequestView.as_view()),
     path('login/', LoginView.as_view()),
+    path('customer/issue/', CustomerIssueView.as_view(), name='customer-issue'),
 
 ]

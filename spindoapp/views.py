@@ -4,19 +4,19 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
-from .serializers import (CustomerRegistrationSerializer, LoginSerializer, StaffAdminRegistrationSerializer,
+from .serializers import (CustomerIssueSerializer, CustomerRegistrationSerializer, LoginSerializer, StaffAdminRegistrationSerializer,
                           RegisteredCustomerDetailSerializer, RegisteredCustomerListSerializer,
                           StaffAdminDetailSerializer, StaffAdminListSerializer,VendorRegistrationSerializer,ServiceCategorySerializer,VendorRequestSerializer)
 from rest_framework.permissions import IsAuthenticated
 from .authentication import CustomJWTAuthentication
-from .permissions import (IsAdmin, IsAdminOrStaff, IsStaffAdminOwner, check_admin_or_staff_role,
+from .permissions import (IsAdmin, IsAdminFromAllLog, IsAdminOrCustomerFromAllLog, IsAdminOrStaff, IsCustomerFromAllLog, IsStaffAdminOwner, check_admin_or_staff_role,
                           PERMISSION_DENIED, ONLY_ADMIN_CAN_CREATE_STAFF, ONLY_CUSTOMERS_CAN_UPDATE,
                           ONLY_ADMIN_AND_STAFF_CAN_UPDATE, ONLY_ACCESS_OWN_DATA, ONLY_UPDATE_OWN_DATA,
                           MOBILE_NUMBER_CANNOT_CHANGE, CANNOT_CHANGE_ACTIVE_STATUS, CUSTOMER_NOT_FOUND,
                           STAFF_NOT_FOUND, UNIQUE_ID_REQUIRED, UNIQUE_ID_REQUIRED_FOR_CUSTOMER,
                           UNIQUE_ID_REQUIRED_FOR_STAFF, EMAIL_ALREADY_REGISTERED, 
                           MOBILE_NUMBER_ALREADY_REGISTERED)
-from .models import StaffAdmin, RegisteredCustomer, AllLog, Vendor,ServiceCategory, VendorRequest
+from .models import CustomerIssue, StaffAdmin, RegisteredCustomer, AllLog, Vendor,ServiceCategory, VendorRequest
 
 class CustomTokenRefreshView(APIView):
     authentication_classes = []
@@ -654,3 +654,105 @@ class VendorRequestView(APIView):
             return Response({"status": True, "message": "Request deleted successfully"}, status=status.HTTP_200_OK)
         except VendorRequest.DoesNotExist:
             return Response({"status": False, "message": "Request not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+class CustomerIssueAPIView(APIView):
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [IsAdminOrCustomerFromAllLog()]
+        elif self.request.method == "POST":
+            return [IsCustomerFromAllLog()]
+        elif self.request.method in ["PUT", "PATCH", "DELETE"]:
+            return [IsAdminFromAllLog()]
+        return []
+
+    def get(self, request):
+        if request.user.role == "customer":
+            issues = CustomerIssue.objects.filter(user=request.user)
+        else:
+            issues = CustomerIssue.objects.all()
+
+        serializer = CustomerIssueSerializer(issues, many=True)
+        return Response(
+            {"status": True, "data": serializer.data},
+            status=status.HTTP_200_OK
+        )
+
+  
+    def post(self, request):
+        serializer = CustomerIssueSerializer(data=request.data)
+
+        if serializer.is_valid():
+            serializer.save(user=request.user)
+            return Response(
+                {"status": True, "message": "Issue created successfully"},
+                status=status.HTTP_201_CREATED
+            )
+
+        return Response(
+            {"status": False, "errors": serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    def put(self, request):
+        issue_id = request.data.get("id")
+        new_status = request.data.get("status")
+
+        if not issue_id:
+            return Response(
+                {"status": False, "message": "id is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not new_status:
+            return Response(
+                {"status": False, "message": "status is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            issue = CustomerIssue.objects.get(id=issue_id)
+        except CustomerIssue.DoesNotExist:
+            return Response(
+                {"status": False, "message": "Issue not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # ✅ Validate status choice
+        valid_status = dict(CustomerIssue.STATUS_CHOICES).keys()
+        if new_status not in valid_status:
+            return Response(
+                {"status": False, "message": "Invalid status value"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # ✅ Update ONLY status
+        issue.status = new_status
+        issue.save(update_fields=["status"])
+
+        return Response(
+            {"status": True, "message": "Status updated successfully"},
+            status=status.HTTP_200_OK
+        )
+
+    def delete(self, request):
+        issue_id = request.data.get("id")
+
+        if not issue_id:
+            return Response(
+                {"status": False, "message": "id is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            issue = CustomerIssue.objects.get(id=issue_id)
+            issue.delete()
+            return Response(
+                {"status": True, "message": "Issue deleted successfully"},
+                status=status.HTTP_200_OK
+            )
+        except CustomerIssue.DoesNotExist:
+            return Response(
+                {"status": False, "message": "Issue not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )

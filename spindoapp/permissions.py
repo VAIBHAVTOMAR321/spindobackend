@@ -99,3 +99,38 @@ def check_admin_or_staff_role(user):
     Returns True if user is admin or staff, False otherwise.
     """
     return user and user.is_authenticated and user.role in ["admin", "staff", "staffadmin"]
+
+class IsAdminFromAllLog(BasePermission):
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            raise PermissionDenied("Authentication credentials were not provided.")
+
+        if request.user.role != "admin":
+            raise PermissionDenied("You don't have permission to perform this action.")
+
+        return True
+
+
+class IsCustomerFromAllLog(BasePermission):
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            raise PermissionDenied("Authentication credentials were not provided.")
+
+        if request.user.role != "customer":
+            raise PermissionDenied("You don't have permission to perform this action.")
+
+        return True
+
+
+class IsAdminOrCustomerFromAllLog(BasePermission):
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            raise PermissionDenied("Authentication credentials were not provided.")
+
+        if request.user.role not in ["admin", "customer"]:
+            raise PermissionDenied("You don't have permission to perform this action.")
+
+        return True

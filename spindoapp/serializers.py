@@ -2,7 +2,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.hashers import check_password, make_password
 from rest_framework import serializers
 from django.db import transaction
-from .models import AllLog, RegisteredCustomer, ServiceCategory, StaffAdmin, Vendor, VendorRequest
+from .models import AllLog, CustomerIssue, RegisteredCustomer, ServiceCategory, StaffAdmin, Vendor, VendorRequest
 
 
 class LoginSerializer(serializers.Serializer):
@@ -50,7 +50,7 @@ class CustomerRegistrationSerializer(serializers.ModelSerializer):
     class Meta:
         model = RegisteredCustomer
         fields = '__all__'
-        read_only_fields = ('id', 'created_at', 'updated_at','unique_id')
+        read_only_fields = ('id', 'created_at', 'updated_at', 'unique_id')
 
     def validate_mobile_number(self, value):
         if AllLog.objects.filter(phone=value).exists():
@@ -59,20 +59,19 @@ class CustomerRegistrationSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def create(self, validated_data):
-        phone = validated_data['mobile_number']
-        customer = RegisteredCustomer.objects.create(
-            username=validated_data['username'],
-            mobile_number=phone,
-            state=validated_data['state'],
-            district=validated_data['district'],
-            block=validated_data['block'],
-        )
+        password = validated_data.pop('password')
+
+       
+        customer = RegisteredCustomer.objects.create(**validated_data)
+
         AllLog.objects.create(
             unique_id=customer.unique_id,
-            phone=phone,
-            password=make_password(validated_data['password']),
+            email=customer.email,
+            phone=customer.mobile_number,
+            password=make_password(password),
             role="customer"
         )
+
         return customer
 
 class StaffAdminRegistrationSerializer(serializers.ModelSerializer):
@@ -189,5 +188,11 @@ class ServiceCategorySerializer(serializers.ModelSerializer):
 class VendorRequestSerializer(serializers.ModelSerializer):
     class Meta:
         model = VendorRequest
+        fields = '__all__'
+        read_only_fields = ('id', 'created_at', 'updated_at', 'status')
+    
+class CustomerIssueSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CustomerIssue
         fields = '__all__'
         read_only_fields = ('id', 'created_at', 'updated_at', 'status')

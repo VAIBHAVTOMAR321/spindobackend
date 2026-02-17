@@ -57,15 +57,12 @@ class AllLog(models.Model):
 class RegisteredCustomer(models.Model):
 
     id = models.AutoField(primary_key=True)
-
     unique_id = models.CharField(max_length=50, unique=True,blank=True, null=True)
-
     username = models.CharField(max_length=150)
-
+    email = models.EmailField(unique=True, null=True, blank=True)
+    image = models.ImageField(upload_to='customer_images/', blank=True, null=True)
     mobile_number = models.CharField(max_length=15, unique=True)
-
     state = models.CharField(max_length=100)
-
     district = models.CharField(max_length=100)
 
     block = models.CharField(max_length=100)
@@ -204,3 +201,23 @@ class VendorRequest(models.Model):
 
     def __str__(self):
         return f"{self.title} ({self.vendor.unique_id})"
+class CustomerIssue(models.Model):
+    
+    STATUS_CHOICES = (
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    )
+
+    name = models.CharField(max_length=100, blank=True, null=True)
+    unique_id = models.CharField(max_length=100, blank=True, null=True)
+    title = models.CharField(max_length=200, blank=True, null=True)
+    issue = models.TextField( blank=True, null=True)
+    extra_remark = models.TextField(blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    issue_image = models.ImageField(upload_to='customer_issues/', blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.name} - {self.title}"
