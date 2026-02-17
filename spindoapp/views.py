@@ -1,22 +1,24 @@
-# views.py
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework.decorators import api_view
+
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
-from .serializers import (CustomerIssueSerializer, CustomerRegistrationSerializer, LoginSerializer, ServiceRequestByUserSerializer, StaffAdminRegistrationSerializer,
+from rest_framework.permissions import AllowAny
+from .serializers import (CustomerRegistrationSerializer, LoginSerializer, StaffAdminRegistrationSerializer,
                           RegisteredCustomerDetailSerializer, RegisteredCustomerListSerializer,
-                          StaffAdminDetailSerializer, StaffAdminListSerializer,VendorRegistrationSerializer,ServiceCategorySerializer,VendorRequestSerializer)
+                          StaffAdminDetailSerializer, StaffAdminListSerializer,VendorRegistrationSerializer,ServiceCategorySerializer,ServiceRequestByUserSerializer,VendorRequestSerializer,CustomerIssueSerializer)
 from rest_framework.permissions import IsAuthenticated
 from .authentication import CustomJWTAuthentication
-from .permissions import (IsAdmin, IsAdminFromAllLog, IsAdminOrCustomerFromAllLog, IsAdminOrStaff, IsAdminOrStaffAdminFromAllLog, IsCustomerFromAllLog, IsStaffAdminOwner, check_admin_or_staff_role,
+from .permissions import (IsAdmin, IsAdminFromAllLog, IsAdminOrCustomerFromAllLog, IsAdminOrStaff, IsCustomerFromAllLog, IsStaffAdminOwner, check_admin_or_staff_role,IsAdminOrStaffAdminFromAllLog,
                           PERMISSION_DENIED, ONLY_ADMIN_CAN_CREATE_STAFF, ONLY_CUSTOMERS_CAN_UPDATE,
                           ONLY_ADMIN_AND_STAFF_CAN_UPDATE, ONLY_ACCESS_OWN_DATA, ONLY_UPDATE_OWN_DATA,
                           MOBILE_NUMBER_CANNOT_CHANGE, CANNOT_CHANGE_ACTIVE_STATUS, CUSTOMER_NOT_FOUND,
                           STAFF_NOT_FOUND, UNIQUE_ID_REQUIRED, UNIQUE_ID_REQUIRED_FOR_CUSTOMER,
                           UNIQUE_ID_REQUIRED_FOR_STAFF, EMAIL_ALREADY_REGISTERED, 
                           MOBILE_NUMBER_ALREADY_REGISTERED)
-from .models import CustomerIssue, ServiceRequestByUser, StaffAdmin, RegisteredCustomer, AllLog, Vendor,ServiceCategory, VendorRequest
+from .models import StaffAdmin, RegisteredCustomer, AllLog, Vendor,ServiceCategory,VendorRequest,CustomerIssue,ServiceRequestByUser
+
 
 class CustomTokenRefreshView(APIView):
     authentication_classes = []
@@ -38,6 +40,7 @@ class CustomTokenRefreshView(APIView):
                 "status": False,
                 "message": "Invalid or expired refresh token"
             }, status=status.HTTP_401_UNAUTHORIZED)
+            
 class CustomerRegistrationView(APIView):
 
 
@@ -145,17 +148,16 @@ class CustomerRegistrationView(APIView):
             # Update allowed fields
             if 'username' in request.data:
                 customer.username = request.data['username']
-            if 'email' in request.data:
-                customer.email = request.data['email']
-            if 'image' in request.FILES:
-                customer.image = request.FILES['image']
             if 'state' in request.data:
                 customer.state = request.data['state']
             if 'district' in request.data:
                 customer.district = request.data['district']
             if 'block' in request.data:
                 customer.block = request.data['block']
-            
+            if 'email' in request.data:
+                customer.email = request.data['email']
+            if 'image' in request.FILES:
+                customer.image = request.FILES['image']
             customer.save()
             
             return Response({
@@ -597,7 +599,6 @@ class ServiceCategoryView(APIView):
             return Response({"status": True, "message": "Category deleted successfully"}, status=status.HTTP_200_OK)
         except ServiceCategory.DoesNotExist:
             return Response({"status": False, "message": "Category not found"}, status=status.HTTP_404_NOT_FOUND)
-        
 class VendorRequestView(APIView):
     def get_permissions(self):
         if self.request.method == 'GET':
@@ -658,7 +659,6 @@ class VendorRequestView(APIView):
             return Response({"status": True, "message": "Request deleted successfully"}, status=status.HTTP_200_OK)
         except VendorRequest.DoesNotExist:
             return Response({"status": False, "message": "Request not found"}, status=status.HTTP_404_NOT_FOUND)
-        
 class CustomerIssueAPIView(APIView):
 
     def get_permissions(self):
@@ -669,11 +669,11 @@ class CustomerIssueAPIView(APIView):
         elif self.request.method in ["PUT", "PATCH", "DELETE"]:
             return [IsAdminFromAllLog()]
         return []
-
     def get(self, request):
-        if unique_id := request.query_params.get("unique_id"):
-            issues = CustomerIssue.objects.filter(unique_id=unique_id)
+        user_id = request.query_params.get("unique_id")
 
+        if user_id:
+            issues = CustomerIssue.objects.filter(unique_id=user_id)
         else:
             issues = CustomerIssue.objects.all()
 
@@ -682,13 +682,11 @@ class CustomerIssueAPIView(APIView):
             {"status": True, "data": serializer.data},
             status=status.HTTP_200_OK
         )
-
-  
     def post(self, request):
         serializer = CustomerIssueSerializer(data=request.data)
 
         if serializer.is_valid():
-            serializer.save(user=request.user)
+            serializer.save()
             return Response(
                 {"status": True, "message": "Issue created successfully"},
                 status=status.HTTP_201_CREATED
@@ -698,7 +696,6 @@ class CustomerIssueAPIView(APIView):
             {"status": False, "errors": serializer.errors},
             status=status.HTTP_400_BAD_REQUEST
         )
-
     def put(self, request):
         issue_id = request.data.get("id")
         new_status = request.data.get("status")
@@ -723,7 +720,6 @@ class CustomerIssueAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # ✅ Validate status choice
         valid_status = dict(CustomerIssue.STATUS_CHOICES).keys()
         if new_status not in valid_status:
             return Response(
@@ -731,7 +727,6 @@ class CustomerIssueAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # ✅ Update ONLY status
         issue.status = new_status
         issue.save(update_fields=["status"])
 
@@ -761,6 +756,12 @@ class CustomerIssueAPIView(APIView):
                 {"status": False, "message": "Issue not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
+
+        except CustomerIssue.DoesNotExist:
+            return Response(
+                {"status": False, "message": "Issue not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
 class ServiceRequestAPIView(APIView):
 
     def get_permissions(self):
@@ -774,7 +775,7 @@ class ServiceRequestAPIView(APIView):
             return [IsAdminFromAllLog()]
         return []
 
-    # 🔹 GET
+    # ðŸ”¹ GET
     def get(self, request):
 
         if request.user.role == "customer":
@@ -803,15 +804,31 @@ class ServiceRequestAPIView(APIView):
             status=status.HTTP_200_OK
         )
 
-    # 🔹 POST (Customer Create)
+    # ðŸ”¹ POST (Customer Create)
     def post(self, request):
+
+        if request.user.role != "customer":
+            return Response(
+                {"status": False, "message": "Only customers can create request"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        try:
+            customer = RegisteredCustomer.objects.get(
+                unique_id=request.user.unique_id
+            )
+        except RegisteredCustomer.DoesNotExist:
+            return Response(
+                {"status": False, "message": "Customer profile not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
         serializer = ServiceRequestByUserSerializer(data=request.data)
 
         if serializer.is_valid():
             serializer.save(
                 unique_id=request.user.unique_id,
-                username=request.user.username
+                username=customer.username
             )
 
             return Response(
@@ -824,7 +841,7 @@ class ServiceRequestAPIView(APIView):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    # 🔹 PUT (Customer Update Own Request)
+    # ðŸ”¹ PUT (Customer Update Own Request)
     def put(self, request):
 
         request_id = request.data.get("id")
@@ -876,7 +893,7 @@ class ServiceRequestAPIView(APIView):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    # 🔹 DELETE (Admin Only)
+    # ðŸ”¹ DELETE (Admin Only)
     def delete(self, request):
 
         request_id = request.data.get("id")
@@ -905,54 +922,50 @@ class AssignVendorAPIView(APIView):
     permission_classes = [IsAdminOrStaffAdminFromAllLog]
 
     def post(self, request):
-
-        service_id = request.data.get("request_id")
+        service_id = request.data.get("service_id")
         vendor_unique_id = request.data.get("vendor_unique_id")
 
-        # 🔹 Validate input
         if not service_id or not vendor_unique_id:
             return Response(
-                {
-                    "status": False,
-                    "message": "service_id and vendor_unique_id are required"
-                },
+                {"status": False, "message": "service_id and vendor_unique_id required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # 🔹 Get Service Request
-        service = ServiceRequestByUser.objects.filter(request_id=service_id).first()
-
-        # 🔹 Get Vendor
+        # 🔹 Fetch Service Request
         try:
-            vendor = Vendor.objects.get(unique_id=vendor_unique_id)
+            service = ServiceRequestByUser.objects.get(id=service_id)
+        except ServiceRequestByUser.DoesNotExist:
+            return Response(
+                {"status": False, "message": "Request not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # 🔹 Fetch Vendor from AllLog
+        try:
+            vendor_alllog = AllLog.objects.get(unique_id=vendor_unique_id, role="vendor")
+        except AllLog.DoesNotExist:
+            return Response(
+                {"status": False, "message": "Vendor not found in AllLog"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # 🔹 Fetch Vendor details to get username
+        try:
+            vendor_obj = Vendor.objects.get(unique_id=vendor_unique_id)
         except Vendor.DoesNotExist:
             return Response(
-                {
-                    "status": False,
-                    "message": "Vendor not found"
-                },
+                {"status": False, "message": "Vendor details not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        if not service:
-            return Response(
-                {
-                    "status": False,
-                    "message": "Service request not found"
-                },
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-        # 🔹 Assign Vendor (IMPORTANT FIX)
-        service.assign_to_id = vendor.unique_id   # ✅ Correct way
-        service.assigned_to_name = vendor.username
+        # 🔹 Assign Vendor
+        service.assign_to = vendor_alllog.unique_id                # Keep AllLog instance
+        service.assigned_to_name = vendor_obj.username # Fetch username from Vendor table
 
         # 🔹 Assigned By
         service.assigned_by = request.user
-
         if request.user.role == "admin":
             service.assigned_by_name = "Admin"
-
         elif request.user.role == "staffadmin":
             try:
                 staff = StaffAdmin.objects.get(unique_id=request.user.unique_id)
@@ -960,21 +973,17 @@ class AssignVendorAPIView(APIView):
             except StaffAdmin.DoesNotExist:
                 service.assigned_by_name = "Staff Admin"
 
-        # 🔹 Update Status
         service.status = "assigned"
         service.save()
 
         return Response(
-            {
-                "status": True,
-                "message": "Vendor assigned successfully"
-                
-            },
+            {"status": True, "message": "Vendor assigned successfully"},
             status=status.HTTP_200_OK
         )
-from rest_framework.decorators import api_view
+
+
 @api_view(['GET'])
-def get_categories(request):
+def get_services_categories(request):
 
     # Fetch only accepted records
     services = ServiceCategory.objects.filter(status='accepted')
@@ -1006,7 +1015,6 @@ def get_categories(request):
         },
         status=status.HTTP_200_OK
     )
-
 @api_view(['GET'])
 def get_all_vendors(request):
     vendors = Vendor.objects.all().values('unique_id','username','address','category')

@@ -1,8 +1,9 @@
+# serializers.py (add this)
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.hashers import check_password, make_password
 from rest_framework import serializers
 from django.db import transaction
-from .models import AllLog, CustomerIssue, RegisteredCustomer, ServiceCategory, ServiceRequestByUser, StaffAdmin, Vendor, VendorRequest
+from .models import AllLog, RegisteredCustomer, ServiceCategory, StaffAdmin, Vendor,VendorRequest,CustomerIssue,ServiceRequestByUser
 
 
 class LoginSerializer(serializers.Serializer):
@@ -185,18 +186,20 @@ class ServiceCategorySerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ('id', 'created_at', 'updated_at')
 
+
 class VendorRequestSerializer(serializers.ModelSerializer):
     class Meta:
         model = VendorRequest
         fields = '__all__'
         read_only_fields = ('id', 'created_at', 'updated_at', 'status')
-    
+
 class CustomerIssueSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomerIssue
         fields = '__all__'
         read_only_fields = ('id', 'created_at', 'updated_at', 'status')
-    
+
+
 class ServiceRequestByUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = ServiceRequestByUser

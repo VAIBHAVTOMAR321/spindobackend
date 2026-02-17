@@ -57,12 +57,16 @@ class AllLog(models.Model):
 class RegisteredCustomer(models.Model):
 
     id = models.AutoField(primary_key=True)
+
     unique_id = models.CharField(max_length=50, unique=True,blank=True, null=True)
+
     username = models.CharField(max_length=150)
+
+    mobile_number = models.CharField(max_length=15, unique=True)
+
+    state = models.CharField(max_length=100)
     email = models.EmailField(unique=True, null=True, blank=True)
     image = models.ImageField(upload_to='customer_images/', blank=True, null=True)
-    mobile_number = models.CharField(max_length=15, unique=True)
-    state = models.CharField(max_length=100)
     district = models.CharField(max_length=100)
 
     block = models.CharField(max_length=100)
@@ -131,7 +135,7 @@ class StaffAdmin(models.Model):
 
     def __str__(self):
         return f"{self.can_name} ({self.unique_id})"
-    
+        
 class Vendor(models.Model):
     id = models.AutoField(primary_key=True)
     unique_id = models.CharField(max_length=50, unique=True, blank=True, null=True)
@@ -163,7 +167,7 @@ class Vendor(models.Model):
 
     def __str__(self):
         return f"{self.username} ({self.unique_id})"
-    
+        
 class ServiceCategory(models.Model):
     STATUS_CHOICES = (
         ('accepted', 'Accepted'),
@@ -181,7 +185,6 @@ class ServiceCategory(models.Model):
 
     def __str__(self):
         return self.prod_name
-    
 class VendorRequest(models.Model):
     STATUS_CHOICES = (
         ('approved', 'Approved'),
@@ -201,6 +204,8 @@ class VendorRequest(models.Model):
 
     def __str__(self):
         return f"{self.title} ({self.vendor.unique_id})"
+        
+        
 class CustomerIssue(models.Model):
     
     STATUS_CHOICES = (
@@ -208,7 +213,7 @@ class CustomerIssue(models.Model):
         ('approved', 'Approved'),
         ('rejected', 'Rejected'),
     )
-
+    query_id = models.CharField(max_length=20, unique=True, blank=True, null=True)
     name = models.CharField(max_length=100, blank=True, null=True)
     unique_id = models.CharField(max_length=100, blank=True, null=True)
     title = models.CharField(max_length=200, blank=True, null=True)
@@ -218,9 +223,23 @@ class CustomerIssue(models.Model):
     issue_image = models.ImageField(upload_to='customer_issues/', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    def save(self, *args, **kwargs):
+        # Auto-generate query_id if not set
+        if not self.query_id:
+            last_issue = CustomerIssue.objects.order_by('-id').first()
+            if last_issue and last_issue.query_id:
+                # Extract number from last query_id
+                last_number = int(last_issue.query_id.split('-')[1])
+                new_number = last_number + 1
+            else:
+                new_number = 1
+            self.query_id = f"QUERY-{new_number:03d}"
+
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.name} - {self.title}"
+        
 class ServiceRequestByUser(models.Model):
     STATUS_CHOICES = (('pending', 'Pending'),('assigned', 'Assigned'),('completed', 'Completed'),('cancelled', 'Cancelled'))
     username = models.CharField(max_length=150,blank=True, null=True)
@@ -234,12 +253,13 @@ class ServiceRequestByUser(models.Model):
     address = models.TextField(blank=True, null=True)
     request_for_services = models.JSONField(default=dict,blank=True,null=True)  # For multiple fields
     schedule_date = models.DateField(blank=True, null=True)
+    alternate_contact_number = models.CharField(max_length=15, blank=True, null=True)
     schedule_time = models.TimeField(null=True, blank=True)
     description = models.TextField(blank=True, null=True)
     status = models.CharField(max_length=20,choices=STATUS_CHOICES,default='pending')
     assign_to = models.ForeignKey( AllLog,on_delete=models.SET_NULL,null=True,blank=True,to_field='unique_id',related_name="assigned_vendor")
     assigned_to_name = models.CharField(max_length=150, null=True, blank=True)
-    assigned_by = models.ForeignKey(AllLog,on_delete=models.SET_NULL,null=True,blank=True, related_name="assigned_by_admin")
+    assigned_by = models.ForeignKey(AllLog,on_delete=models.SET_NULL,null=True,blank=True, related_name="assigned_by_admin",to_field='unique_id')
     assigned_by_name = models.CharField(max_length=150, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
