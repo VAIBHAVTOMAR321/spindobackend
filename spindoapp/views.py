@@ -2,22 +2,23 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.decorators import api_view
+from django.contrib.auth.hashers import make_password
 
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 from rest_framework.permissions import AllowAny
 from .serializers import (CustomerRegistrationSerializer, LoginSerializer, StaffAdminRegistrationSerializer,
                           RegisteredCustomerDetailSerializer, RegisteredCustomerListSerializer,
-                          StaffAdminDetailSerializer, StaffAdminListSerializer,VendorRegistrationSerializer,ServiceCategorySerializer,ServiceRequestByUserSerializer,VendorRequestSerializer,CustomerIssueSerializer)
+                          StaffAdminDetailSerializer, StaffAdminListSerializer, StaffIssueSerializer,VendorRegistrationSerializer,ServiceCategorySerializer,ServiceRequestByUserSerializer,VendorRequestSerializer,CustomerIssueSerializer)
 from rest_framework.permissions import IsAuthenticated
 from .authentication import CustomJWTAuthentication
-from .permissions import (IsAdmin, IsAdminFromAllLog, IsAdminOrCustomerFromAllLog, IsAdminOrStaff, IsCustomerFromAllLog, IsStaffAdminOwner, check_admin_or_staff_role,IsAdminOrStaffAdminFromAllLog,
+from .permissions import (IsAdmin, IsAdminFromAllLog, IsAdminOrCustomerFromAllLog, IsAdminOrStaff, IsCustomerFromAllLog, IsStaffAdminFromAllLog, IsStaffAdminOwner, check_admin_or_staff_role,IsAdminOrStaffAdminFromAllLog,
                           PERMISSION_DENIED, ONLY_ADMIN_CAN_CREATE_STAFF, ONLY_CUSTOMERS_CAN_UPDATE,
                           ONLY_ADMIN_AND_STAFF_CAN_UPDATE, ONLY_ACCESS_OWN_DATA, ONLY_UPDATE_OWN_DATA,
                           MOBILE_NUMBER_CANNOT_CHANGE, CANNOT_CHANGE_ACTIVE_STATUS, CUSTOMER_NOT_FOUND,
                           STAFF_NOT_FOUND, UNIQUE_ID_REQUIRED, UNIQUE_ID_REQUIRED_FOR_CUSTOMER,
                           UNIQUE_ID_REQUIRED_FOR_STAFF, EMAIL_ALREADY_REGISTERED, 
                           MOBILE_NUMBER_ALREADY_REGISTERED)
-from .models import StaffAdmin, RegisteredCustomer, AllLog, Vendor,ServiceCategory,VendorRequest,CustomerIssue,ServiceRequestByUser
+from .models import StaffAdmin, RegisteredCustomer, AllLog, StaffIssue, Vendor,ServiceCategory,VendorRequest,CustomerIssue,ServiceRequestByUser
 
 
 class CustomTokenRefreshView(APIView):
@@ -48,17 +49,29 @@ class CustomerRegistrationView(APIView):
     # permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        mobile_number = request.data.get("mobile_number")
+
+        # 🔹 Check duplicate mobile before serializer
+        if AllLog.objects.filter(phone=mobile_number).exists():
+            return Response({
+                "status": False,
+                "message": "Mobile number already registered"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
         serializer = CustomerRegistrationSerializer(data=request.data)
+        
         if serializer.is_valid():
             serializer.save()
             return Response({
                 "status": True,
                 "message": "Customer registered successfully"
             }, status=status.HTTP_201_CREATED)
+
         return Response({
             "status": False,
             "errors": serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
+
 
     def get(self, request):
         unique_id = request.query_params.get('unique_id')
@@ -107,45 +120,48 @@ class CustomerRegistrationView(APIView):
         }, status=status.HTTP_403_FORBIDDEN)
 
     def put(self, request):
-        """
-        Update customer details. Only customers can update their own data.
-        Customers cannot change their mobile_number.
-        """
+
         user_role = request.user.role if hasattr(request.user, 'role') else None
-        
-        # Only customers can update their details
-        if user_role != "customer":
-            return Response({
-                "status": False,
-                "message": ONLY_CUSTOMERS_CAN_UPDATE
-            }, status=status.HTTP_403_FORBIDDEN)
-        
         unique_id = request.data.get('unique_id')
-        
+
         if not unique_id:
             return Response({
                 "status": False,
                 "message": UNIQUE_ID_REQUIRED
             }, status=status.HTTP_400_BAD_REQUEST)
-        
+
         try:
             customer = RegisteredCustomer.objects.get(unique_id=unique_id)
-            # Check if the logged-in user matches the requested unique_id
-            log = AllLog.objects.get(unique_id=unique_id)
-            if log.phone != request.user.phone:
+            alllog = AllLog.objects.get(unique_id=unique_id)
+
+        except RegisteredCustomer.DoesNotExist:
+            return Response({
+                "status": False,
+                "message": CUSTOMER_NOT_FOUND
+            }, status=status.HTTP_404_NOT_FOUND)
+
+     
+        if user_role == "customer":
+
+        
+            if request.user.unique_id != unique_id:
                 return Response({
                     "status": False,
                     "message": ONLY_UPDATE_OWN_DATA
                 }, status=status.HTTP_403_FORBIDDEN)
-            
-            # Check if user is trying to change mobile_number
-            if 'mobile_number' in request.data and request.data['mobile_number'] != customer.mobile_number:
+
+       
+            if 'mobile_number' in request.data:
                 return Response({
                     "status": False,
                     "message": MOBILE_NUMBER_CANNOT_CHANGE
                 }, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Update allowed fields
+
+        
+            if 'password' in request.data:
+                alllog.password = make_password(request.data['password'])
+
+           
             if 'username' in request.data:
                 customer.username = request.data['username']
             if 'state' in request.data:
@@ -156,21 +172,56 @@ class CustomerRegistrationView(APIView):
                 customer.block = request.data['block']
             if 'email' in request.data:
                 customer.email = request.data['email']
+                alllog.email = request.data['email']
             if 'image' in request.FILES:
                 customer.image = request.FILES['image']
+
             customer.save()
-            
+            alllog.save()
+
             return Response({
                 "status": True,
                 "message": "Customer details updated successfully"
             }, status=status.HTTP_200_OK)
-            
-        except RegisteredCustomer.DoesNotExist:
+
+        # 🔹 ADMIN LOGIC
+        elif user_role == "admin":
+
+            # Admin can update mobile number
+            if 'mobile_number' in request.data:
+                new_mobile = request.data['mobile_number']
+
+                # Check duplicate
+                if RegisteredCustomer.objects.filter(
+                    mobile_number=new_mobile
+                ).exclude(unique_id=unique_id).exists():
+                    return Response({
+                        "status": False,
+                        "message": MOBILE_NUMBER_ALREADY_REGISTERED
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
+                customer.mobile_number = new_mobile
+                alllog.phone = new_mobile
+
+            # Admin can update password
+            if 'password' in request.data:
+                from django.contrib.auth.hashers import make_password
+                new_password = make_password(request.data['password'])
+                alllog.password = new_password
+
+            customer.save()
+            alllog.save()
+
+            return Response({
+                "status": True,
+                "message": "Customer updated successfully by admin"
+            }, status=status.HTTP_200_OK)
+
+        else:
             return Response({
                 "status": False,
-                "message": CUSTOMER_NOT_FOUND
-            }, status=status.HTTP_404_NOT_FOUND)
-
+                "message": "You don't have permission to update"
+            }, status=status.HTTP_403_FORBIDDEN)
 
 class LoginView(APIView):
 
@@ -258,18 +309,19 @@ class StaffAdminRegistrationView(APIView):
                 "status": True,
                 "message": "Staff admin created successfully"
             }, status=status.HTTP_201_CREATED)
-
+        errors = serializer.errors
+        if "mobile_number" in errors:
+            return Response({
+                "status": False,
+                "message": errors["mobile_number"][0]
+            }, status=status.HTTP_400_BAD_REQUEST)
         return Response({
             "status": False,
             "errors": serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
 
     def put(self, request):
-        """
-        Update staff admin details.
-        Staff can update: can_name, email_id, address, can_aadharcard (NOT mobile_number or is_active).
-        Admin can update all fields including mobile_number and is_active status.
-        """
+      
         user_role = request.user.role if hasattr(request.user, 'role') else None
         
         # Only admin and staffadmin can update
@@ -297,7 +349,13 @@ class StaffAdminRegistrationView(APIView):
                         "status": False,
                         "message": ONLY_UPDATE_OWN_DATA
                     }, status=status.HTTP_403_FORBIDDEN)
-                
+                if 'password' in request.data:
+                    try:
+                        alllog = AllLog.objects.get(unique_id=unique_id)
+                        alllog.password = make_password(request.data['password'])
+                        alllog.save()
+                    except AllLog.DoesNotExist:
+                        pass
                 # Staffadmin cannot change mobile_number
                 if 'mobile_number' in request.data and request.data['mobile_number'] != staff.mobile_number:
                     return Response({
@@ -337,6 +395,13 @@ class StaffAdminRegistrationView(APIView):
             
             # Admin can update all fields
             elif user_role == "admin":
+                if 'password' in request.data:
+                    try:
+                        alllog = AllLog.objects.get(unique_id=unique_id)
+                        alllog.password = make_password(request.data['password'])
+                        alllog.save()
+                    except AllLog.DoesNotExist:
+                        pass
                 if 'can_name' in request.data:
                     staff.can_name = request.data['can_name']
                 if 'address' in request.data:
@@ -379,6 +444,7 @@ class StaffAdminRegistrationView(APIView):
                     try:
                         alllog = AllLog.objects.get(unique_id=unique_id)
                         alllog.is_active = request.data['is_active']
+                        staff.is_active = request.data['is_active']
                         alllog.save()
                     except AllLog.DoesNotExist:
                         pass
@@ -416,6 +482,12 @@ class VendorRegistrationView(APIView):
                 "status": True,
                 "message": "Vendor registered successfully"
             }, status=status.HTTP_201_CREATED)
+        errors = serializer.errors
+        if "mobile_number" in errors:
+            return Response({
+                "status": False,
+                "message": errors["mobile_number"][0]
+            }, status=status.HTTP_400_BAD_REQUEST)
         return Response({
             "status": False,
             "errors": serializer.errors
@@ -539,6 +611,7 @@ class VendorRegistrationView(APIView):
                 if 'is_active' in request.data:
                     vendor.is_active = request.data['is_active']
 
+
             vendor.save()
             return Response({
                 "status": True,
@@ -659,6 +732,8 @@ class VendorRequestView(APIView):
             return Response({"status": True, "message": "Request deleted successfully"}, status=status.HTTP_200_OK)
         except VendorRequest.DoesNotExist:
             return Response({"status": False, "message": "Request not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
 class CustomerIssueAPIView(APIView):
 
     def get_permissions(self):
@@ -675,7 +750,7 @@ class CustomerIssueAPIView(APIView):
         if user_id:
             issues = CustomerIssue.objects.filter(unique_id=user_id)
         else:
-            issues = CustomerIssue.objects.all()
+            issues = CustomerIssue.objects.all().order_by("-created_at")
 
         serializer = CustomerIssueSerializer(issues, many=True)
         return Response(
@@ -698,17 +773,10 @@ class CustomerIssueAPIView(APIView):
         )
     def put(self, request):
         issue_id = request.data.get("id")
-        new_status = request.data.get("status")
 
         if not issue_id:
             return Response(
                 {"status": False, "message": "id is required"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        if not new_status:
-            return Response(
-                {"status": False, "message": "status is required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -720,20 +788,21 @@ class CustomerIssueAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        valid_status = dict(CustomerIssue.STATUS_CHOICES).keys()
-        if new_status not in valid_status:
+        # 🔹 Use same serializer as POST
+        serializer = CustomerIssueSerializer(issue, data=request.data, partial=True)
+
+        if serializer.is_valid():
+            serializer.save()
             return Response(
-                {"status": False, "message": "Invalid status value"},
-                status=status.HTTP_400_BAD_REQUEST
+                {"status": True, "message": "Issue updated successfully"},
+                status=status.HTTP_200_OK
             )
 
-        issue.status = new_status
-        issue.save(update_fields=["status"])
-
         return Response(
-            {"status": True, "message": "Status updated successfully"},
-            status=status.HTTP_200_OK
+            {"status": False, "errors": serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST
         )
+
 
     def delete(self, request):
         issue_id = request.data.get("id")
@@ -1026,3 +1095,99 @@ def get_all_vendors(request):
         },
         status=status.HTTP_200_OK
     )
+class StaffIssueAPIView(APIView):
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [IsAdminOrStaffAdminFromAllLog()]
+        elif self.request.method == "POST":
+            return [IsStaffAdminFromAllLog()]
+        elif self.request.method in ["PUT", "PATCH", "DELETE"]:
+            return [IsAdminFromAllLog()]
+        return []
+
+
+    def get(self, request):
+        user_id = request.query_params.get("unique_id")
+
+        if user_id:
+            issues = StaffIssue.objects.filter(unique_id=user_id)
+        else:
+            issues = StaffIssue.objects.all()
+
+        serializer = StaffIssueSerializer(issues, many=True)
+        return Response(
+            {"status": True, "data": serializer.data},
+            status=status.HTTP_200_OK
+        )
+
+   
+    def post(self, request):
+        serializer = StaffIssueSerializer(data=request.data)
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {"status": True, "message": "Staff issue created successfully"},
+                status=status.HTTP_201_CREATED
+            )
+
+        return Response(
+            {"status": False, "errors": serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+  
+    def put(self, request):
+        issue_id = request.data.get("id")
+
+        if not issue_id:
+            return Response(
+                {"status": False, "message": "id is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            issue = StaffIssue.objects.get(id=issue_id)
+        except StaffIssue.DoesNotExist:
+            return Response(
+                {"status": False, "message": "Issue not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # 🔹 Use same serializer as POST
+        serializer = StaffIssueSerializer(issue, data=request.data, partial=True)
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {"status": True, "message": "Issue updated successfully"},
+                status=status.HTTP_200_OK
+            )
+
+        return Response(
+            {"status": False, "errors": serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    def delete(self, request):
+        issue_id = request.data.get("id")
+
+        if not issue_id:
+            return Response(
+                {"status": False, "message": "id is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            issue = StaffIssue.objects.get(id=issue_id)
+            issue.delete()
+            return Response(
+                {"status": True, "message": "Issue deleted successfully"},
+                status=status.HTTP_200_OK
+            )
+        except StaffIssue.DoesNotExist:
+            return Response(
+                {"status": False, "message": "Issue not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )

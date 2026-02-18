@@ -158,3 +158,14 @@ class IsAdminOrStaffAdminFromAllLog(BasePermission):
 
        
         raise PermissionDenied("You don't have permission to perform this action.")
+    
+class IsStaffAdminFromAllLog(BasePermission):
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            raise PermissionDenied("Authentication credentials were not provided.")
+
+        if request.user.role != "staffadmin":
+            raise PermissionDenied("You don't have permission to perform this action.")
+
+        return True

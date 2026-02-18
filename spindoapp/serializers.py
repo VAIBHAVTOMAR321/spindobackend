@@ -3,7 +3,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.hashers import check_password, make_password
 from rest_framework import serializers
 from django.db import transaction
-from .models import AllLog, RegisteredCustomer, ServiceCategory, StaffAdmin, Vendor,VendorRequest,CustomerIssue,ServiceRequestByUser
+from .models import AllLog, RegisteredCustomer, ServiceCategory, StaffAdmin, StaffIssue, Vendor,VendorRequest,CustomerIssue,ServiceRequestByUser
 
 
 class LoginSerializer(serializers.Serializer):
@@ -88,11 +88,7 @@ class StaffAdminRegistrationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Mobile number already registered")
         return value
 
-    def validate_email_id(self, value):
-        if AllLog.objects.filter(email=value).exists():
-            raise serializers.ValidationError("Email already registered")
-        return value
-
+    
     @transaction.atomic
     def create(self, validated_data):
         phone = validated_data['mobile_number']
@@ -157,10 +153,7 @@ class VendorRegistrationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Mobile number already registered")
         return value
 
-    def validate_email(self, value):
-        if AllLog.objects.filter(email=value).exists():
-            raise serializers.ValidationError("Email already registered")
-        return value
+    
 
     @transaction.atomic
     def create(self, validated_data):
@@ -203,5 +196,10 @@ class CustomerIssueSerializer(serializers.ModelSerializer):
 class ServiceRequestByUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = ServiceRequestByUser
+        fields = '__all__'
+        read_only_fields = ('id', 'created_at', 'updated_at', 'status')
+class StaffIssueSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StaffIssue
         fields = '__all__'
         read_only_fields = ('id', 'created_at', 'updated_at', 'status')

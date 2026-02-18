@@ -19,7 +19,7 @@ class AllLog(models.Model):
 
     phone = models.CharField(max_length=15, unique=True)
 
-    email = models.EmailField(unique=True, null=True, blank=True)
+    email = models.EmailField(null=True, blank=True)
 
     password = models.CharField(max_length=255)
 
@@ -110,7 +110,7 @@ class StaffAdmin(models.Model):
     address = models.TextField(blank=True, null=True)
 
     can_aadharcard = models.FileField(upload_to='aadhar_cards/', blank=True, null=True)
-
+    is_active=models.BooleanField(default=False)  # Staff Admin is active by default
     created_at = models.DateTimeField(auto_now_add=True)
 
     updated_at = models.DateTimeField(auto_now=True)
@@ -197,6 +197,7 @@ class VendorRequest(models.Model):
     title = models.CharField(max_length=255)
     issue = models.TextField()
     issue_image = models.ImageField(upload_to='vendor_issues/', blank=True, null=True)
+    query_id = models.CharField(max_length=20, unique=True, blank=True, null=True)
     remarks = models.TextField(blank=True, null=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
     created_at = models.DateTimeField(auto_now_add=True)
@@ -204,6 +205,20 @@ class VendorRequest(models.Model):
 
     def __str__(self):
         return f"{self.title} ({self.vendor.unique_id})"
+    def save(self, *args, **kwargs):
+     
+        if not self.query_id:
+            last_issue = CustomerIssue.objects.order_by('-id').first()
+            if last_issue and last_issue.query_id:
+              
+                last_number = int(last_issue.query_id.split('-')[1])
+                new_number = last_number + 1
+            else:
+                new_number = 1
+            self.query_id = f"QUERY-{new_number:03d}"
+
+        super().save(*args, **kwargs)
+    
         
         
 class CustomerIssue(models.Model):
@@ -224,11 +239,11 @@ class CustomerIssue(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     def save(self, *args, **kwargs):
-        # Auto-generate query_id if not set
+     
         if not self.query_id:
             last_issue = CustomerIssue.objects.order_by('-id').first()
             if last_issue and last_issue.query_id:
-                # Extract number from last query_id
+              
                 last_number = int(last_issue.query_id.split('-')[1])
                 new_number = last_number + 1
             else:
@@ -281,3 +296,38 @@ class ServiceRequestByUser(models.Model):
 
     def __str__(self):
         return f"{self.request_id} - {self.username}"
+class StaffIssue(models.Model):
+
+    STATUS_CHOICES = (
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    )
+
+    query_id = models.CharField(max_length=20, unique=True, blank=True, null=True)
+    name = models.CharField(max_length=100, blank=True, null=True)
+    unique_id = models.CharField(max_length=100, blank=True, null=True)
+    title = models.CharField(max_length=200, blank=True, null=True)
+    issue = models.TextField(blank=True, null=True)
+    extra_remark = models.TextField(blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    issue_image = models.ImageField(upload_to='staff_issues/', blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        if not self.query_id:
+            last_issue = StaffIssue.objects.order_by('-id').first()
+            if last_issue and last_issue.query_id:
+                last_number = int(last_issue.query_id.split('-')[1])
+                new_number = last_number + 1
+            else:
+                new_number = 1
+
+            self.query_id = f"QUERY-{new_number:03d}"
+
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.name} - {self.title}"

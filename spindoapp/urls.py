@@ -1,7 +1,7 @@
 # urls.py
 
 from django.urls import path
-from .views import CustomerRegistrationView, LoginView, StaffAdminRegistrationView,get_all_vendors, VendorRegistrationView, get_services_categories, ServiceCategoryView,CustomTokenRefreshView,VendorRequestView,CustomerIssueAPIView,ServiceRequestAPIView,AssignVendorAPIView
+from .views import CustomerRegistrationView, LoginView, StaffAdminRegistrationView, StaffIssueAPIView,get_all_vendors, VendorRegistrationView, get_services_categories, ServiceCategoryView,CustomTokenRefreshView,VendorRequestView,CustomerIssueAPIView,ServiceRequestAPIView,AssignVendorAPIView
 
 urlpatterns = [
 
@@ -16,5 +16,6 @@ urlpatterns = [
     path('customer/requestservices/', ServiceRequestAPIView.as_view(), name='customer-requestservices'),
     path('assign-vendor/', AssignVendorAPIView.as_view(), name='assign-vendor'),
     path('get-service/categories/',  get_services_categories, name='get_categories'),
-      path('vendor/list/', get_all_vendors, name='get_all_vendors'),
+    path('vendor/list/', get_all_vendors, name='get_all_vendors'),
+    path('staffadmin/issue/', StaffIssueAPIView.as_view(), name='staff-issue'),
 ]
