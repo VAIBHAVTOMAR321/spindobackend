@@ -1,0 +1,26 @@
+from spindoapp.models import DistrictBlock
+
+data = {
+    "Almora": ["Bhaisiyachana","Bhikiyasain","Chaukhutiya","Dhauladevi","Dwarahat","Havalbag","Lamgarha","Salt","Syalde","Tadikhet","Takula"],
+    "Bageshwar": ["Bageshwar","Garud","Kapkot"],
+    "Chamoli": ["Dasoli","Dewal","Gairsain","Ghat","Joshimath","Karnprayag","Narayanbagar","Pokhari","Tharali"],
+    "Champawat": ["Barakot","Champawat","Lohaghat","Paati"],
+    "Dehradun": ["Chakrata","Dehradun City","Doiwala","Kalsi","Raipur","Sahaspur","Vikasnagar"],
+    "Haridwar": ["Bahadarabad","Bhagwanpur","Haridwar City","Khanpur","Laksar","Manglore","Narsan","Roorkeecity","Roorkee"],
+    "Nainital": ["Betalghat","Bheemtal","Dhari","Haldwani","Kotabag","Okhalkanda","Ramgarh","Ramnagar"],
+    "Pauri Garhwal": ["Beeronkhal","Dugadda","Dwarikhal","Ekeshwar","Jaiharikhal","Kaljikhal","Khirsu","Kot","Nainidanda","Pabau","Pauri","Pokhara","Rikhnikhal","Thalisain","Yamkeshwar"],
+    "Pithoragarh": ["Berinag","Dharchula","Didihat","Gangolihat","Kanalichhina","Munakot","Munsiari","Pithoragarh"],
+    "Rudraprayag": ["Agastymuni","Jakholi","Ukhimath"],
+    "Tehri Garhwal": ["Bhilangana","Chamba","Hindolakhal","Jakhanidhar","Kirtinagar","Narendranagar","Pratapnagar","Thatyur","Thauldhar"],
+    "Udham Singh Nagar": ["Bazpur","Gadarpur","Jaspur","Kashipur","Khatima","Rudrapur","Sitarganj"],
+    "Uttarkashi": ["Bhatwari","Chinyalisaur","Dunda","Mori","Naugaon","Purola"],
+}
+
+for district, blocks in data.items():
+    for block in blocks:
+        DistrictBlock.objects.get_or_create(
+            district=district,
+            block=block
+        )
+
+print("Data inserted successfully ✅")

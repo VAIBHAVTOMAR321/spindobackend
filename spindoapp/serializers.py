@@ -190,7 +190,7 @@ class CustomerIssueSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomerIssue
         fields = '__all__'
-        read_only_fields = ('id', 'created_at', 'updated_at', 'status')
+        read_only_fields = ( 'created_at', 'updated_at', 'status')
 
 
 class ServiceRequestByUserSerializer(serializers.ModelSerializer):
@@ -202,4 +202,4 @@ class StaffIssueSerializer(serializers.ModelSerializer):
     class Meta:
         model = StaffIssue
         fields = '__all__'
-        read_only_fields = ('id', 'created_at', 'updated_at', 'status')
+        read_only_fields = ('created_at', 'updated_at', 'status')

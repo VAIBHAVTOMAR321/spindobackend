@@ -331,3 +331,13 @@ class StaffIssue(models.Model):
 
     def __str__(self):
         return f"{self.name} - {self.title}"
+class DistrictBlock(models.Model):
+    state = models.CharField(max_length=100, default="Uttarakhand")
+    district = models.CharField(max_length=100)
+    block = models.CharField(max_length=100)
+
+    class Meta:
+        unique_together = ('district', 'block')
+
+    def __str__(self):
+        return f"{self.state} - {self.district} - {self.block}"
