@@ -6,7 +6,9 @@ from django.contrib.auth.hashers import make_password
 
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 from rest_framework.permissions import AllowAny
-from .serializers import (CustomerRegistrationSerializer, LoginSerializer, StaffAdminRegistrationSerializer,
+
+from .utils_billing import generate_bill_pdf
+from .serializers import (BillingSerializer, CustomerRegistrationSerializer, LoginSerializer, StaffAdminRegistrationSerializer,
                           RegisteredCustomerDetailSerializer, RegisteredCustomerListSerializer,
                           StaffAdminDetailSerializer, StaffAdminListSerializer, StaffIssueSerializer,VendorRegistrationSerializer,ServiceCategorySerializer,ServiceRequestByUserSerializer,VendorRequestSerializer,CustomerIssueSerializer)
 from rest_framework.permissions import IsAuthenticated
@@ -18,7 +20,7 @@ from .permissions import (IsAdmin, IsAdminFromAllLog, IsAdminOrCustomerFromAllLo
                           STAFF_NOT_FOUND, UNIQUE_ID_REQUIRED, UNIQUE_ID_REQUIRED_FOR_CUSTOMER,
                           UNIQUE_ID_REQUIRED_FOR_STAFF, EMAIL_ALREADY_REGISTERED, 
                           MOBILE_NUMBER_ALREADY_REGISTERED)
-from .models import StaffAdmin, RegisteredCustomer, AllLog, StaffIssue, Vendor,ServiceCategory,VendorRequest,CustomerIssue,ServiceRequestByUser
+from .models import Billing, DistrictBlock, StaffAdmin, RegisteredCustomer, AllLog, StaffIssue, Vendor,ServiceCategory,VendorRequest,CustomerIssue,ServiceRequestByUser
 
 
 class CustomTokenRefreshView(APIView):
@@ -502,10 +504,9 @@ class VendorRegistrationView(APIView):
             vendors = Vendor.objects.all()
             serializer = VendorRegistrationSerializer(vendors, many=True)
             data = serializer.data
-            if user_role == "staffadmin":
+           
                 # Remove 'is_active' from each vendor dict for staffadmin
-                for item in data:
-                     item.pop("is_active", None)
+                
             return Response({
                 "status": True,
                 "data": data,
@@ -568,6 +569,8 @@ class VendorRegistrationView(APIView):
                         "status": False,
                         "message": "Mobile number cannot be changed"
                     }, status=status.HTTP_400_BAD_REQUEST)
+                if 'aadhar_card' in request.FILES:
+                    vendor.aadhar_card = request.FILES['aadhar_card']
                 # Update allowed fields
                 for field in ['username', 'email', 'state', 'district', 'block', 'address', 'category', 'description']:
                     if field in request.data:
@@ -604,6 +607,7 @@ class VendorRegistrationView(APIView):
                     vendor.mobile_number = request.data['mobile_number']
                     log.phone = request.data['mobile_number']
                     log.save()
+
                 if 'is_active' in request.data:
                     vendor.is_active = request.data['is_active']
                     log.is_active = request.data['is_active']  # <-- Add this line
@@ -991,7 +995,7 @@ class AssignVendorAPIView(APIView):
     permission_classes = [IsAdminOrStaffAdminFromAllLog]
 
     def post(self, request):
-        service_id = request.data.get("service_id")
+        service_id = request.data.get("request_id")
         vendor_unique_id = request.data.get("vendor_unique_id")
 
         if not service_id or not vendor_unique_id:
@@ -1002,23 +1006,26 @@ class AssignVendorAPIView(APIView):
 
         # 🔹 Fetch Service Request
         try:
-            service = ServiceRequestByUser.objects.get(id=service_id)
+            service = ServiceRequestByUser.objects.get(request_id=service_id)
         except ServiceRequestByUser.DoesNotExist:
             return Response(
                 {"status": False, "message": "Request not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # 🔹 Fetch Vendor from AllLog
+     
         try:
-            vendor_alllog = AllLog.objects.get(unique_id=vendor_unique_id, role="vendor")
+            vendor_alllog = AllLog.objects.get(
+                unique_id=vendor_unique_id,
+                role="vendor"
+            )
         except AllLog.DoesNotExist:
             return Response(
-                {"status": False, "message": "Vendor not found in AllLog"},
+                {"status": False, "message": "Vendor not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # 🔹 Fetch Vendor details to get username
+      
         try:
             vendor_obj = Vendor.objects.get(unique_id=vendor_unique_id)
         except Vendor.DoesNotExist:
@@ -1027,14 +1034,16 @@ class AssignVendorAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # 🔹 Assign Vendor
-        service.assign_to = vendor_alllog.unique_id                # Keep AllLog instance
-        service.assigned_to_name = vendor_obj.username # Fetch username from Vendor table
+      
+        service.assign_to = vendor_alllog
+        service.assigned_to_name = vendor_obj.username
 
-        # 🔹 Assigned By
+    
         service.assigned_by = request.user
+
         if request.user.role == "admin":
             service.assigned_by_name = "Admin"
+
         elif request.user.role == "staffadmin":
             try:
                 staff = StaffAdmin.objects.get(unique_id=request.user.unique_id)
@@ -1049,7 +1058,6 @@ class AssignVendorAPIView(APIView):
             {"status": True, "message": "Vendor assigned successfully"},
             status=status.HTTP_200_OK
         )
-
 
 @api_view(['GET'])
 def get_services_categories(request):
@@ -1189,5 +1197,171 @@ class StaffIssueAPIView(APIView):
         except StaffIssue.DoesNotExist:
             return Response(
                 {"status": False, "message": "Issue not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+
+
+class DistrictBlockAPIView(APIView):
+
+    def get(self, request):
+        district = request.query_params.get('district', '').strip()
+        queryset = DistrictBlock.objects.all()
+        if district:
+            blocks = list(
+                queryset.filter(district__iexact=district)
+                        .order_by('block')
+                        .values_list('block', flat=True)
+            )
+
+            if not blocks:
+                return Response(
+                    {"status": False, "message": "No blocks found for this district"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            return Response(
+                {
+                    "status": True,
+                    "data": {
+                        "state": "Uttarakhand",
+                        "district": district.title(),
+                        "blocks": blocks
+                    }
+                },
+                status=status.HTTP_200_OK
+            )
+        districts = queryset.order_by('district', 'block') \
+                            .values('district', 'block')
+
+        result = {}
+        for item in districts:
+            result.setdefault(item['district'], []).append(item['block'])
+
+        response_data = [
+            {"district": d, "blocks": b}
+            for d, b in result.items()
+        ]
+
+        return Response(
+            {
+                "status": True,
+                "data": {
+                    "state": "Uttarakhand",
+                    "districts": response_data
+                }
+            },
+            status=status.HTTP_200_OK
+        )
+
+class BillingAPIView(APIView):
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [IsAdminOrStaffAdminFromAllLog()]
+        elif self.request.method == "POST":
+            return [IsStaffAdminFromAllLog()]
+        elif self.request.method in ["PUT", "PATCH", "DELETE"]:
+            return [IsAdminFromAllLog()]
+        return []
+
+    def get(self, request):
+        bill_id = request.query_params.get("bill_id")
+
+        if bill_id:
+            try:
+                bill = Billing.objects.get(bill_id=bill_id)
+                serializer = BillingSerializer(bill)
+                return Response(
+                    {"status": True, "data": serializer.data},
+                    status=status.HTTP_200_OK
+                )
+            except Billing.DoesNotExist:
+                return Response(
+                    {"status": False, "message": "Bill not found"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+        bills = Billing.objects.all()
+        serializer = BillingSerializer(bills, many=True)
+
+        return Response(
+            {"status": True, "data": serializer.data},
+            status=status.HTTP_200_OK
+        )
+
+  
+    def post(self, request):
+        serializer = BillingSerializer(data=request.data)
+
+        if serializer.is_valid():
+            bill = serializer.save()
+
+            # Generate PDF after saving
+            generate_bill_pdf(bill)
+
+            return Response(
+                {"status": True, "message": "Bill created successfully"},
+                status=status.HTTP_201_CREATED
+            )
+
+        return Response(
+            {"status": False, "errors": serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # 🔥 PUT using bill_id
+    def put(self, request):
+        bill_id = request.data.get("bill_id")
+
+        if not bill_id:
+            return Response(
+                {"status": False, "message": "bill_id is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            bill = Billing.objects.get(bill_id=bill_id)
+        except Billing.DoesNotExist:
+            return Response(
+                {"status": False, "message": "Bill not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        serializer = BillingSerializer(bill, data=request.data, partial=True)
+
+        if serializer.is_valid():
+            bill = serializer.save()
+            generate_bill_pdf(bill)  # regenerate PDF
+
+            return Response(
+                {"status": True, "message": "Bill updated successfully"},
+                status=status.HTTP_200_OK
+            )
+
+        return Response(
+            {"status": False, "errors": serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # 🔥 DELETE using bill_id
+    def delete(self, request):
+        bill_id = request.data.get("bill_id")
+
+        if not bill_id:
+            return Response(
+                {"status": False, "message": "bill_id is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            bill = Billing.objects.get(bill_id=bill_id)
+            bill.delete()
+            return Response(
+                {"status": True, "message": "Bill deleted successfully"},
+                status=status.HTTP_200_OK
+            )
+        except Billing.DoesNotExist:
+            return Response(
+                {"status": False, "message": "Bill not found"},
                 status=status.HTTP_404_NOT_FOUND
             )

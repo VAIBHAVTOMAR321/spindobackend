@@ -3,7 +3,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.hashers import check_password, make_password
 from rest_framework import serializers
 from django.db import transaction
-from .models import AllLog, RegisteredCustomer, ServiceCategory, StaffAdmin, StaffIssue, Vendor,VendorRequest,CustomerIssue,ServiceRequestByUser
+from .models import AllLog, Billing, RegisteredCustomer, ServiceCategory, StaffAdmin, StaffIssue, Vendor,VendorRequest,CustomerIssue,ServiceRequestByUser
 
 
 class LoginSerializer(serializers.Serializer):
@@ -203,3 +203,10 @@ class StaffIssueSerializer(serializers.ModelSerializer):
         model = StaffIssue
         fields = '__all__'
         read_only_fields = ('created_at', 'updated_at', 'status')
+    
+class BillingSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Billing
+        fields = "__all__"
+        read_only_fields = ("bill_id", "bill_pdf", "created_at")

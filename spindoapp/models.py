@@ -341,3 +341,40 @@ class DistrictBlock(models.Model):
 
     def __str__(self):
         return f"{self.state} - {self.district} - {self.block}"
+class Billing(models.Model):
+
+    bill_id = models.CharField(max_length=30, unique=True, blank=True)
+    vendor_id = models.CharField(max_length=70,blank=True, null=True)
+    payment_id = models.CharField(max_length=50,blank=True, null=True)
+
+    customer_name = models.CharField(max_length=80,blank=True, null=True)
+    cust_mobile = models.CharField(max_length=15,blank=True, null=True)
+
+    service_type = models.CharField(max_length=30,blank=True, null=True)
+    service_des = models.CharField(max_length=100,blank=True, null=True)
+
+    amount = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
+    gst = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
+    total_payment = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
+
+    payment_type = models.CharField(max_length=50,blank=True, null=True)
+    bill_pdf = models.FileField(upload_to='bills/', blank=True, null=True)
+    bill_date_time= models.DateTimeField(blank=True, null=True)
+    created_at = models.TimeField(auto_now_add=True)
+
+    status = models.CharField(max_length=30)
+    def save(self, *args, **kwargs):
+        if not self.bill_id:
+            last_bill = Billing.objects.order_by('-id').first()
+            if last_bill and last_bill.bill_id:
+                last_number = int(last_bill.bill_id.split('-')[1])
+                new_number = last_number + 1
+            else:
+                new_number = 1
+
+            self.bill_id = f"BILL-{new_number:03d}"
+
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.bill_id
