@@ -3,7 +3,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.hashers import check_password, make_password
 from rest_framework import serializers
 from django.db import transaction
-from .models import AllLog, Billing, RegisteredCustomer, ServiceCategory, StaffAdmin, StaffIssue, Vendor,VendorRequest,CustomerIssue,ServiceRequestByUser
+from .models import AllLog, RegisteredCustomer, ServiceCategory, StaffAdmin, Vendor,VendorRequest,CustomerIssue,ServiceRequestByUser,StaffIssue,Billing,ContactUs
+
 
 
 class LoginSerializer(serializers.Serializer):
@@ -89,6 +90,7 @@ class StaffAdminRegistrationSerializer(serializers.ModelSerializer):
         return value
 
     
+
     @transaction.atomic
     def create(self, validated_data):
         phone = validated_data['mobile_number']
@@ -99,6 +101,7 @@ class StaffAdminRegistrationSerializer(serializers.ModelSerializer):
             email_id=email,
             address=validated_data['address'],
             can_aadharcard=validated_data.get('can_aadharcard', None),
+            staff_image=validated_data.get('staff_image'),
         )
         AllLog.objects.create(
             unique_id=staff.unique_id,
@@ -139,7 +142,7 @@ class StaffAdminListSerializer(serializers.ModelSerializer):
 
 class VendorRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
-    aadhar_card = serializers.FileField(required=False)
+    aadhar_card = serializers.FileField(required=False,allow_null=True)
     address = serializers.CharField(required=False, allow_blank=True)
     description = serializers.CharField(required=False, allow_blank=True)
 
@@ -158,11 +161,16 @@ class VendorRegistrationSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def create(self, validated_data):
         password = make_password(validated_data.pop('password'))
+    
+        # Remove is_active if coming from request
+        validated_data.pop('is_active', None)
+    
         vendor = Vendor.objects.create(
             **validated_data,
             password=password,
             is_active=False
         )
+    
         AllLog.objects.create(
             unique_id=vendor.unique_id,
             phone=vendor.mobile_number,
@@ -171,6 +179,7 @@ class VendorRegistrationSerializer(serializers.ModelSerializer):
             role="vendor",
             is_active=False
         )
+    
         return vendor
     
 class ServiceCategorySerializer(serializers.ModelSerializer):
@@ -184,29 +193,33 @@ class VendorRequestSerializer(serializers.ModelSerializer):
     class Meta:
         model = VendorRequest
         fields = '__all__'
-        read_only_fields = ('id', 'created_at', 'updated_at', 'status')
+        read_only_fields = ('id', 'created_at', 'updated_at')
 
 class CustomerIssueSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomerIssue
         fields = '__all__'
-        read_only_fields = ( 'created_at', 'updated_at', 'status')
+        read_only_fields = ('id', 'created_at', 'updated_at')
 
 
 class ServiceRequestByUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = ServiceRequestByUser
         fields = '__all__'
-        read_only_fields = ('id', 'created_at', 'updated_at', 'status')
+        read_only_fields = ('created_at', 'updated_at')
 class StaffIssueSerializer(serializers.ModelSerializer):
     class Meta:
         model = StaffIssue
         fields = '__all__'
-        read_only_fields = ('created_at', 'updated_at', 'status')
-    
+        read_only_fields = ('created_at', 'updated_at')
+        
 class BillingSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Billing
         fields = "__all__"
         read_only_fields = ("bill_id", "bill_pdf", "created_at")
+class ContactUsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ContactUs
+        fields = "__all__"
