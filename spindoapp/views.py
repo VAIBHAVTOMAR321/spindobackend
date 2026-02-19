@@ -1,3 +1,4 @@
+from urllib import request
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -394,6 +395,8 @@ class StaffAdminRegistrationView(APIView):
                     staff.address = request.data['address']
                 if 'can_aadharcard' in request.FILES:
                     staff.can_aadharcard = request.FILES['can_aadharcard']
+                if 'staff_image' in request.FILES:
+                    staff.staff_image = request.FILES['staff_image']
             
             # Admin can update all fields
             elif user_role == "admin":
@@ -408,6 +411,8 @@ class StaffAdminRegistrationView(APIView):
                     staff.can_name = request.data['can_name']
                 if 'address' in request.data:
                     staff.address = request.data['address']
+                if 'staff_image' in request.FILES:
+                    staff.staff_image = request.FILES['staff_image']
                 if 'email_id' in request.data:
                     # Check if email already exists
                     if AllLog.objects.filter(email=request.data['email_id']).exclude(unique_id=unique_id).exists():
@@ -571,6 +576,8 @@ class VendorRegistrationView(APIView):
                     }, status=status.HTTP_400_BAD_REQUEST)
                 if 'aadhar_card' in request.FILES:
                     vendor.aadhar_card = request.FILES['aadhar_card']
+                if 'vendor_image' in request.FILES:
+                    vendor.vendor_image = request.FILES['vendor_image']
                 # Update allowed fields
                 for field in ['username', 'email', 'state', 'district', 'block', 'address', 'category', 'description']:
                     if field in request.data:
@@ -843,7 +850,7 @@ class ServiceRequestAPIView(APIView):
         elif self.request.method == "POST":
             return [IsCustomerFromAllLog()]
         elif self.request.method in ["PUT", "PATCH"]:
-            return [IsCustomerFromAllLog()]
+            return [IsAuthenticated()]
         elif self.request.method == "DELETE":
             return [IsAdminFromAllLog()]
         return []
@@ -917,7 +924,7 @@ class ServiceRequestAPIView(APIView):
     # ðŸ”¹ PUT (Customer Update Own Request)
     def put(self, request):
 
-        request_id = request.data.get("id")
+        request_id = request.data.get("request_id")
 
         if not request_id:
             return Response(
@@ -926,26 +933,15 @@ class ServiceRequestAPIView(APIView):
             )
 
         try:
-            service = ServiceRequestByUser.objects.get(id=request_id)
+            service = ServiceRequestByUser.objects.get(request_id=request_id)
         except ServiceRequestByUser.DoesNotExist:
             return Response(
                 {"status": False, "message": "Request not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # Only owner can update
-        if service.unique_id != request.user.unique_id:
-            return Response(
-                {"status": False, "message": "You can update only your request"},
-                status=status.HTTP_403_FORBIDDEN
-            )
-
-        # Prevent edit after assignment
-        if service.status != "pending":
-            return Response(
-                {"status": False, "message": "Cannot edit after assignment"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+       
+        
 
         serializer = ServiceRequestByUserSerializer(
             service,
@@ -1257,7 +1253,7 @@ class DistrictBlockAPIView(APIView):
 class BillingAPIView(APIView):
     def get_permissions(self):
         if self.request.method == "GET":
-            return [IsAdminOrStaffAdminFromAllLog()]
+            return [IsAuthenticated()]
         elif self.request.method == "POST":
             return [IsStaffAdminFromAllLog()]
         elif self.request.method in ["PUT", "PATCH", "DELETE"]:
@@ -1266,7 +1262,9 @@ class BillingAPIView(APIView):
 
     def get(self, request):
         bill_id = request.query_params.get("bill_id")
+        vendor_id = request.query_params.get("vendor_id")
 
+        # If bill_id is provided → return single bill
         if bill_id:
             try:
                 bill = Billing.objects.get(bill_id=bill_id)
@@ -1281,11 +1279,20 @@ class BillingAPIView(APIView):
                     status=status.HTTP_404_NOT_FOUND
                 )
 
+        # Otherwise filter queryset
         bills = Billing.objects.all()
+
+        if vendor_id:
+            bills = bills.filter(vendor_id=vendor_id)
+
         serializer = BillingSerializer(bills, many=True)
 
         return Response(
-            {"status": True, "data": serializer.data},
+            {
+                "status": True,
+                "data": serializer.data,
+                "count": bills.count()
+            },
             status=status.HTTP_200_OK
         )
 
@@ -1309,7 +1316,7 @@ class BillingAPIView(APIView):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    # 🔥 PUT using bill_id
+   
     def put(self, request):
         bill_id = request.data.get("bill_id")
 
@@ -1343,7 +1350,7 @@ class BillingAPIView(APIView):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    # 🔥 DELETE using bill_id
+
     def delete(self, request):
         bill_id = request.data.get("bill_id")
 

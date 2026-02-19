@@ -3,7 +3,7 @@
 from django.db import models
 import uuid
 
-
+from datetime import datetime
 class AllLog(models.Model):
 
     ROLE_CHOICES = (
@@ -104,11 +104,11 @@ class StaffAdmin(models.Model):
     can_name = models.CharField(max_length=150 ,null=True, blank=True)
 
     mobile_number = models.CharField(max_length=15, unique=True)
-
+    staff_image = models.ImageField(upload_to='staff_images/',blank=True,null=True)
     email_id = models.EmailField(unique=True, null=True, blank=True)
 
     address = models.TextField(blank=True, null=True)
-
+    
     can_aadharcard = models.FileField(upload_to='aadhar_cards/', blank=True, null=True)
     is_active=models.BooleanField(default=False)  # Staff Admin is active by default
     created_at = models.DateTimeField(auto_now_add=True)
@@ -147,6 +147,8 @@ class Vendor(models.Model):
     block = models.CharField(max_length=100)
     password = models.CharField(max_length=255)
     aadhar_card = models.FileField(upload_to='vendor_aadhar/', blank=True, null=True)
+    vendor_image = models.ImageField(upload_to='vendor_images/',blank=True,null=True)
+
     address = models.TextField(blank=True, null=True)
     category = models.JSONField(default=dict)  # For multiple fields
     description = models.TextField(blank=True, null=True)
@@ -356,25 +358,33 @@ class Billing(models.Model):
     amount = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
     gst = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
     total_payment = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-
+    bill_items=models.JSONField(default=list, blank=True, null=True)  # For multiple items in the bill
     payment_type = models.CharField(max_length=50,blank=True, null=True)
     bill_pdf = models.FileField(upload_to='bills/', blank=True, null=True)
     bill_date_time= models.DateTimeField(blank=True, null=True)
-    created_at = models.TimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     status = models.CharField(max_length=30)
     def save(self, *args, **kwargs):
         if not self.bill_id:
-            last_bill = Billing.objects.order_by('-id').first()
+            current_year = datetime.now().year  # 👈 Get current year
+
+            # Get last bill of current year only
+            last_bill = Billing.objects.filter(
+                bill_id__startswith=f"BILL/{current_year}"
+            ).order_by('-id').first()
+
             if last_bill and last_bill.bill_id:
-                last_number = int(last_bill.bill_id.split('-')[1])
+                last_number = int(last_bill.bill_id.split('/')[-1])
                 new_number = last_number + 1
             else:
                 new_number = 1
 
-            self.bill_id = f"BILL-{new_number:03d}"
+            self.bill_id = f"BILL/{current_year}/{new_number:04d}"
 
         super().save(*args, **kwargs)
 
     def __str__(self):
         return self.bill_id
+
+  
