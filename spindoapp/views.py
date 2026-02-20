@@ -53,10 +53,10 @@ class CustomerRegistrationView(APIView):
         mobile_number = request.data.get("mobile_number")
 
        
-        if AllLog.objects.filter(phone=mobile_number).exists():
+        if AllLog.objects.filter(phone=mobile_number, role="customer").exists():
             return Response({
                 "status": False,
-                "message": "Mobile number already registered"
+                "message": "Mobile number already registered for customer"
             }, status=status.HTTP_400_BAD_REQUEST)
 
         serializer = CustomerRegistrationSerializer(data=request.data)
@@ -426,17 +426,24 @@ class StaffAdminRegistrationView(APIView):
                 if 'can_aadharcard' in request.FILES:
                     staff.can_aadharcard = request.FILES['can_aadharcard']
                 if 'mobile_number' in request.data:
-                    # Check if mobile number already exists
-                    if StaffAdmin.objects.filter(mobile_number=request.data['mobile_number']).exclude(unique_id=unique_id).exists():
+                    new_mobile = request.data['mobile_number']
+
+                    # Check duplicate ONLY for staffadmin role
+                    if AllLog.objects.filter(
+                            phone=new_mobile,
+                            role="staffadmin"
+                    ).exclude(unique_id=unique_id).exists():
+
                         return Response({
                             "status": False,
                             "message": MOBILE_NUMBER_ALREADY_REGISTERED
                         }, status=status.HTTP_400_BAD_REQUEST)
-                    staff.mobile_number = request.data['mobile_number']
-                    # Also update in AllLog
+
+                    staff.mobile_number = new_mobile
+
                     try:
                         alllog = AllLog.objects.get(unique_id=unique_id)
-                        alllog.phone = request.data['mobile_number']
+                        alllog.phone = new_mobile
                         alllog.save()
                     except AllLog.DoesNotExist:
                         pass
@@ -601,14 +608,19 @@ class VendorRegistrationView(APIView):
                     if field in request.data:
                         setattr(vendor, field, request.data[field])
                 if 'mobile_number' in request.data:
-                    # Check if mobile number already exists
-                    if AllLog.objects.filter(phone=request.data['mobile_number']).exclude(unique_id=unique_id).exists():
+                    new_mobile = request.data['mobile_number']
+
+                    if AllLog.objects.filter(
+                            phone=new_mobile,
+                            role="vendor"
+                    ).exclude(unique_id=unique_id).exists():
                         return Response({
                             "status": False,
                             "message": "Mobile number already registered"
                         }, status=status.HTTP_400_BAD_REQUEST)
-                    vendor.mobile_number = request.data['mobile_number']
-                    log.phone = request.data['mobile_number']
+
+                    vendor.mobile_number = new_mobile
+                    log.phone = new_mobile
                     log.save()
                 if 'is_active' in request.data:
                     vendor.is_active = request.data['is_active']
@@ -976,9 +988,63 @@ class ServiceRequestAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-       
-        
+        # ✅ VENDOR STATUS UPDATE LOGIC
+        if request.user.role == "vendor":
 
+            vendor_unique_id = request.data.get("vendor_unique_id")
+            new_status = request.data.get("status")
+
+            if not vendor_unique_id or not new_status:
+                return Response(
+                    {"status": False, "message": "vendor_unique_id and status required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            updated = False
+
+            for entry in service.assignments:
+                # entry format:
+                # [services_list, vendor_unique_id, vendor_name, status]
+                if entry[1] == vendor_unique_id:
+                    entry[3] = new_status
+                    updated = True
+                    break
+
+            if not updated:
+                return Response(
+                    {"status": False, "message": "Vendor not assigned to this request"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # ✅ Collect completed services from assignments
+            completed_services = []
+
+            for entry in service.assignments:
+                services_list = entry[0]     # list of services
+                vendor_status = entry[3]
+
+                if vendor_status == "completed":
+                    completed_services.extend(services_list)
+
+            # ✅ Check if ALL requested services are completed
+            all_services_completed = all(
+                req_service in completed_services
+                for req_service in service.request_for_services
+            )
+
+            if all_services_completed:
+                service.status = "completed"
+            else:
+                service.status = "assigned"
+
+            service.save()
+
+            return Response(
+                {"status": True, "message": "Assignment status updated successfully"},
+                status=status.HTTP_200_OK
+            )
+
+        # ✅ OTHER USERS (Admin/Customer/etc)
         serializer = ServiceRequestByUserSerializer(
             service,
             data=request.data,
@@ -997,8 +1063,7 @@ class ServiceRequestAPIView(APIView):
             {"status": False, "errors": serializer.errors},
             status=status.HTTP_400_BAD_REQUEST
         )
-
-    # ðŸ”¹ DELETE (Admin Only)
+        
     def delete(self, request):
 
         request_id = request.data.get("id")
@@ -1031,120 +1096,72 @@ class AssignVendorAPIView(APIView):
     @transaction.atomic
     def post(self, request):
         request_id = request.data.get("request_id")
-        service_name = request.data.get("request_for_services")
-        vendor_unique_id = request.data.get("vendor_unique_id")
-        service_name = request.data.get("request_for_services")
+        assignments_payload = request.data.get("assignments")
 
-        # convert string to list if necessary
-        if isinstance(service_name, str):
-            service_list = [service_name]
-        elif isinstance(service_name, list):
-            service_list = service_name
-        else:
+        if not request_id or not assignments_payload:
             return Response(
-                {"status": False, "message": "request_for_services must be a string or list"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        if not request_id or not service_name or not vendor_unique_id:
-            return Response(
-                {"status": False,
-                 "message": "request_id, request_for_services and vendor_unique_id required"},
+                {"status": False, "message": "request_id and assignments required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # 🔹 Fetch original request
         try:
-            original_request = ServiceRequestByUser.objects.get(request_id=request_id)
+            service_request = ServiceRequestByUser.objects.get(request_id=request_id)
         except ServiceRequestByUser.DoesNotExist:
             return Response(
-                {"status": False, "message": "Original request not found"},
+                {"status": False, "message": "Request not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # 🔹 Prevent duplicate assignment for this service
-        if ServiceRequestByUser.objects.filter(
-            request_id=request_id,
-            request_for_services__contains=[service_name],
-            assign_to__unique_id=vendor_unique_id
-        ).exists():
+        if not isinstance(assignments_payload, list):
             return Response(
-                {"status": False, "message": "This service already assigned to this vendor"},
+                {"status": False, "message": "assignments must be a list"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # 🔹 Get Vendor from AllLog
-        try:
-            vendor_alllog = AllLog.objects.get(unique_id=vendor_unique_id, role="vendor")
-        except AllLog.DoesNotExist:
-            return Response(
-                {"status": False, "message": "Vendor not found"},
-                status=status.HTTP_404_NOT_FOUND
+        if not service_request.assignments:
+            service_request.assignments = []
+
+        for assignment in assignments_payload:
+            vendor_unique_id = assignment.get("vendor_unique_id")
+            service_list = assignment.get("request_for_services")
+
+            if not vendor_unique_id or not isinstance(service_list, list):
+                continue
+
+            # Validate Vendor
+            try:
+                vendor_alllog = AllLog.objects.get(unique_id=vendor_unique_id, role="vendor")
+                vendor_obj = Vendor.objects.get(unique_id=vendor_unique_id)
+            except (AllLog.DoesNotExist, Vendor.DoesNotExist):
+                continue
+
+            # Prevent duplicate vendor assignment
+            already_exists = any(
+                vendor_unique_id == entry[1]
+                for entry in service_request.assignments
             )
 
-        # 🔹 Get Vendor profile (username)
-        try:
-            vendor_obj = Vendor.objects.get(unique_id=vendor_unique_id)
-        except Vendor.DoesNotExist:
-            return Response(
-                {"status": False, "message": "Vendor details not found"},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            if already_exists:
+                continue
 
-        # 🔹 Prepare data for serializer
-        data = {
-             "request_id": original_request.request_id,
-            "username": original_request.username,
-            "unique_id": original_request.unique_id,
-            "contact_number": original_request.contact_number,
-            "email": original_request.email,
-            "state": original_request.state,
-            "district": original_request.district,
-            "block": original_request.block,
-            "address": original_request.address,
-            "request_for_services": [service_name],
-            "schedule_date": original_request.schedule_date,
-            "alternate_contact_number": original_request.alternate_contact_number,
-            "schedule_time": original_request.schedule_time,
-            "description": original_request.description,
-            # serializer expects PK
-            "assigned_to_name": vendor_obj.username,
-           
-            "assign_to": vendor_alllog.unique_id,   # pass unique_id
-            "assigned_by": request.user.unique_id,  # pass unique_id
-            "assigned_to_name": vendor_obj.username,
-            "status": "assigned"# serializer expects PK
-            
-        }
+            # ✅ EXACT STRUCTURE:
+            # [[services_list], vendor_unique_id, vendor_name]
+            new_entry = [
+                service_list,
+                vendor_unique_id,
+                vendor_obj.username,
+                "assigned"
+            ]
 
-        # 🔹 Create new entry using serializer
-        serializer = ServiceRequestByUserSerializer(data=data)
-        if serializer.is_valid():
-            new_request = serializer.save()
+            service_request.assignments.append(new_entry)
 
-            # Assign_by_name logic
-            if request.user.role == "admin":
-                new_request.assigned_by_name = "Admin"
-            elif request.user.role == "staffadmin":
-                try:
-                    staff = StaffAdmin.objects.get(unique_id=request.user.unique_id)
-                    new_request.assigned_by_name = staff.can_name
-                except StaffAdmin.DoesNotExist:
-                    new_request.assigned_by_name = "Staff Admin"
-            else:
-                new_request.assigned_by_name = request.user.unique_id
-
-            new_request.save()
-
-            return Response(
-                {"status": True, "message": f"Vendor assigned for service '{service_name}' successfully"},
-                status=status.HTTP_200_OK
-            )
+        service_request.status = "assigned"
+        service_request.save()
 
         return Response(
-            {"status": False, "errors": serializer.errors},
-            status=status.HTTP_400_BAD_REQUEST
+            {"status": True, "message": "Vendors assigned successfully"},
+            status=status.HTTP_200_OK
         )
-
 @api_view(['GET'])
 def get_services_categories(request):
 

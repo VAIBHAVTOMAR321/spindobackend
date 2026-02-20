@@ -11,14 +11,18 @@ class LoginSerializer(serializers.Serializer):
 
     mobile_number = serializers.CharField()
     password = serializers.CharField(write_only=True)
+    role = serializers.ChoiceField(choices=AllLog.ROLE_CHOICES)
 
     def validate(self, data):
 
         try:
-            user = AllLog.objects.get(phone=data['mobile_number'])
+            user = AllLog.objects.get(
+                phone=data['mobile_number'],
+                role=data['role']
+            )
         except AllLog.DoesNotExist:
             raise serializers.ValidationError({
-                "mobile_number": "Invalid mobile number"
+                "error": "Invalid mobile number or role"
             })
 
         if not check_password(data['password'], user.password):
@@ -32,7 +36,6 @@ class LoginSerializer(serializers.Serializer):
             })
 
         refresh = RefreshToken()
-
         refresh['unique_id'] = user.unique_id
         refresh['user_id'] = user.id
         refresh['role'] = user.role
@@ -55,21 +58,21 @@ class CustomerRegistrationSerializer(serializers.ModelSerializer):
         read_only_fields = ('id', 'created_at', 'updated_at', 'unique_id')
 
     def validate_mobile_number(self, value):
-        if AllLog.objects.filter(phone=value).exists():
-            raise serializers.ValidationError("Mobile number already registered")
+        if AllLog.objects.filter(phone=value, role="customer").exists():
+            raise serializers.ValidationError("Mobile number already registered for Customer")
         return value
 
     @transaction.atomic
     def create(self, validated_data):
         password = validated_data.pop('password')
-
+        mobile_number = validated_data.pop('mobile_number')
        
         customer = RegisteredCustomer.objects.create(**validated_data)
 
         AllLog.objects.create(
             unique_id=customer.unique_id,
             email=customer.email,
-            phone=customer.mobile_number,
+            phone=mobile_number,
             password=make_password(password),
             role="customer"
         )
@@ -85,8 +88,8 @@ class StaffAdminRegistrationSerializer(serializers.ModelSerializer):
         read_only_fields = ('id', 'created_at', 'updated_at','unique_id')
 
     def validate_mobile_number(self, value):
-        if AllLog.objects.filter(phone=value).exists():
-            raise serializers.ValidationError("Mobile number already registered")
+        if AllLog.objects.filter(phone=value, role="staffadmin").exists():
+            raise serializers.ValidationError("Mobile number already registered for staffadmin")
         return value
 
     
@@ -152,8 +155,8 @@ class VendorRegistrationSerializer(serializers.ModelSerializer):
         read_only_fields = ('id', 'created_at', 'updated_at','unique_id')
 
     def validate_mobile_number(self, value):
-        if AllLog.objects.filter(phone=value).exists():
-            raise serializers.ValidationError("Mobile number already registered")
+        if AllLog.objects.filter(phone=value, role="vendor").exists():
+            raise serializers.ValidationError("Mobile number already registered for vendor")
         return value
 
     

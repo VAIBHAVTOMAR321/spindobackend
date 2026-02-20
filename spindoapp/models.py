@@ -11,6 +11,7 @@ class AllLog(models.Model):
     ('customer', 'Customer'),
     ('admin', 'Admin'),
     ('staffadmin', 'Staff Admin'),
+    ('vendor','Vendor')
 )
 
 
@@ -18,7 +19,7 @@ class AllLog(models.Model):
     
     unique_id = models.CharField(max_length=50, unique=True)
 
-    phone = models.CharField(max_length=15, unique=True)
+    phone = models.CharField(max_length=15)
 
     email = models.EmailField(null=True, blank=True)
 
@@ -63,7 +64,7 @@ class RegisteredCustomer(models.Model):
 
     username = models.CharField(max_length=150)
 
-    mobile_number = models.CharField(max_length=15, unique=True)
+    mobile_number = models.CharField(max_length=15)
 
     state = models.CharField(max_length=100)
     email = models.EmailField(null=True, blank=True)
@@ -104,7 +105,7 @@ class StaffAdmin(models.Model):
     staff_image = models.ImageField(upload_to='staff_images/',blank=True,null=True)
     can_name = models.CharField(max_length=150 ,null=True, blank=True)
 
-    mobile_number = models.CharField(max_length=15, unique=True)
+    mobile_number = models.CharField(max_length=15)
 
     email_id = models.EmailField(null=True, blank=True)
 
@@ -172,7 +173,7 @@ class Vendor(models.Model):
         
 class ServiceCategory(models.Model):
     STATUS_CHOICES = (
-        ('accepted', 'Accepted'),
+        ('published', 'Published'),
         ('draft', 'Draft'),
     )
     id = models.AutoField(primary_key=True)
@@ -264,6 +265,7 @@ class ServiceRequestByUser(models.Model):
     unique_id = models.CharField(max_length=50, blank=True, null=True)
     contact_number = models.CharField(max_length=15,blank=True, null=True)
     email = models.EmailField(blank=True, null=True)
+    assignments = models.JSONField(default=list, blank=True)
     state = models.CharField(max_length=100,blank=True, null=True)
     district = models.CharField(max_length=100,blank=True, null=True)
     block = models.CharField(max_length=100,blank=True, null=True)
