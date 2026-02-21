@@ -628,6 +628,13 @@ class VendorRegistrationView(APIView):
                     vendor.mobile_number = new_mobile
                     log.phone = new_mobile
                     log.save()
+                if 'password' in request.data:
+                    try:
+                        alllog = AllLog.objects.get(unique_id=unique_id)
+                        alllog.password = make_password(request.data['password'])
+                        alllog.save()
+                    except AllLog.DoesNotExist:
+                        pass
                 if 'is_active' in request.data:
                     vendor.is_active = request.data['is_active']
                     log.is_active = request.data['is_active']  # <-- Add this line
@@ -918,11 +925,11 @@ class ServiceRequestAPIView(APIView):
             )
     
         elif request.user.role in ["admin", "staffadmin"]:
-            requests = ServiceRequestByUser.objects.all()
+            requests = ServiceRequestByUser.objects.all().order_by("-created_at")
     
         elif request.user.role == "vendor":
     
-            all_requests = ServiceRequestByUser.objects.all()
+            all_requests = ServiceRequestByUser.objects.all().order_by("-created_at")
             vendor_requests = []
     
             for service_request in all_requests:
@@ -1083,9 +1090,7 @@ class ServiceRequestAPIView(APIView):
         
             service.assignments = updated_assignments
         
-            # ===============================
-            # ✅ SEND SMS ONLY TO CANCELLED VENDORS
-            # ===============================
+          
             if cancelled_vendor_ids:
 
                 cancelled_vendors = AllLog.objects.filter(
@@ -1107,7 +1112,7 @@ class ServiceRequestAPIView(APIView):
                             f"&channel=trans"
                             f"&DCS=0"
                             f"&flashsms=0"
-                            f"&number={vendor.phone}"   # use real vendor phone
+                            f"&number=9058423148"   # use real vendor phone
                             f"&text={encoded_message}"
                             f"&route=04"
                             f"&DLTTemplateId=1207163827265054435"
@@ -1115,7 +1120,7 @@ class ServiceRequestAPIView(APIView):
                         )
             
                         try:
-                            response = requests.get(url, timeout=100)
+                            response = requests.get(url,  timeout=100000)
             
                             print("SMS Response:", response.status_code, response.text)
             
@@ -1855,14 +1860,14 @@ class SendOTP(APIView):
                         created_at=timezone.now()
                     )
 
-                return Response({"success": True, "message": "OTP sent successfully"}, status=200)
+                return Response({"success": True, "message": "OTP sent successfully"},  status=status.HTTP_200_OK)
 
             else:
                 return Response({"success": False, "message": "SMS gateway error"}, status=500)
 
         except Exception as e:
             print("OTP sending failed:", str(e))
-            return Response({"success": False, "message": "OTP sending failed (network error)"}, status=500)
+            return Response({"success": False, "message": "OTP sending failed (network error)"},status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
 
 class VerifyOTP(APIView):
@@ -1927,17 +1932,17 @@ class ResetPassword(APIView):
 
             return Response(
                 {"success": True, "message": "Password reset successfully"},
-                status=200
+                status=status.HTTP_200_OK
             )
 
         except PhoneOTP.DoesNotExist:
             return Response(
                 {"success": False, "message": "OTP not found"},
-                status=404
+                status=status.HTTP_400_BAD_REQUEST
             )
 
         except AllLog.DoesNotExist:
             return Response(
                 {"success": False, "message": "User not found"},
-                status=404
+                 status=status.HTTP_404_NOT_FOUND
             )
