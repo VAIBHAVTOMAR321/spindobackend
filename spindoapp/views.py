@@ -629,12 +629,8 @@ class VendorRegistrationView(APIView):
                     log.phone = new_mobile
                     log.save()
                 if 'password' in request.data:
-                    try:
-                        alllog = AllLog.objects.get(unique_id=unique_id)
-                        alllog.password = make_password(request.data['password'])
-                        alllog.save()
-                    except AllLog.DoesNotExist:
-                        pass
+                    log.password = make_password(request.data['password'])
+                    log.save()
                 if 'is_active' in request.data:
                     vendor.is_active = request.data['is_active']
                     log.is_active = request.data['is_active']  # <-- Add this line
