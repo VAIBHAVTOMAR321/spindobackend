@@ -1,7 +1,7 @@
 # urls.py
 
 from django.urls import path
-from .views import CustomerRegistrationView,BillingAPIView,ContactUsAPIView, LoginView,StaffIssueAPIView, StaffAdminRegistrationView,get_all_vendors,DistrictBlockAPIView, VendorRegistrationView, get_services_categories, ServiceCategoryView,CustomTokenRefreshView,VendorRequestView,CustomerIssueAPIView,ServiceRequestAPIView,AssignVendorAPIView
+from .views import CustomerRegistrationView,BillingAPIView,ContactUsAPIView, LoginView, SolarInstallationQueryAPIView,StaffIssueAPIView, StaffAdminRegistrationView,get_all_vendors,DistrictBlockAPIView, VendorRegistrationView, get_services_categories, ServiceCategoryView,CustomTokenRefreshView,VendorRequestView,CustomerIssueAPIView,ServiceRequestAPIView,AssignVendorAPIView
 
 urlpatterns = [
 
@@ -21,4 +21,5 @@ urlpatterns = [
     path('district-blocks/', DistrictBlockAPIView.as_view(), name='district-blocks'),
     path("billing/", BillingAPIView.as_view(), name="billing-api"),
     path("contact-us/", ContactUsAPIView.as_view(), name="contact-us-api"),
+    path('solar-query/', SolarInstallationQueryAPIView.as_view(),name="solar-query"),
 ]

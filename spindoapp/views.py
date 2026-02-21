@@ -7,7 +7,7 @@ from django.contrib.auth.hashers import make_password
 from .utils_billing import generate_bill_pdf
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 from rest_framework.permissions import AllowAny
-from .serializers import (CustomerRegistrationSerializer, LoginSerializer, StaffAdminRegistrationSerializer,StaffIssueSerializer,BillingSerializer, ContactUsSerializer,
+from .serializers import (CustomerRegistrationSerializer, LoginSerializer, SolarInstallationQuerySerializer, StaffAdminRegistrationSerializer,StaffIssueSerializer,BillingSerializer, ContactUsSerializer,
                           RegisteredCustomerDetailSerializer, RegisteredCustomerListSerializer,
                           StaffAdminDetailSerializer, StaffAdminListSerializer,VendorRegistrationSerializer,ServiceCategorySerializer,ServiceRequestByUserSerializer,VendorRequestSerializer,CustomerIssueSerializer)
 from rest_framework.permissions import IsAuthenticated
@@ -19,7 +19,7 @@ from .permissions import (IsAdmin, IsAdminFromAllLog, IsAdminOrCustomerFromAllLo
                           STAFF_NOT_FOUND, UNIQUE_ID_REQUIRED, UNIQUE_ID_REQUIRED_FOR_CUSTOMER,
                           UNIQUE_ID_REQUIRED_FOR_STAFF, EMAIL_ALREADY_REGISTERED, 
                           MOBILE_NUMBER_ALREADY_REGISTERED)
-from .models import StaffAdmin, RegisteredCustomer, AllLog, Vendor,ServiceCategory,VendorRequest,CustomerIssue,ServiceRequestByUser,StaffIssue,DistrictBlock,Billing, ContactUs
+from .models import SolarInstallationQuery, StaffAdmin, RegisteredCustomer, AllLog, Vendor,ServiceCategory,VendorRequest,CustomerIssue,ServiceRequestByUser,StaffIssue,DistrictBlock,Billing, ContactUs
 from django.db import transaction
 
 class CustomTokenRefreshView(APIView):
@@ -1197,7 +1197,8 @@ def get_services_categories(request):
     )
 @api_view(['GET'])
 def get_all_vendors(request):
-    vendors = Vendor.objects.all().values('unique_id','username','address','category')
+
+    vendors = Vendor.objects.filter(is_active=True).values('unique_id','username','address','category')
 
     return Response(
         {
@@ -1492,7 +1493,7 @@ class ContactUsAPIView(APIView):
     def get_permissions(self):
         if self.request.method == "POST":
             return [AllowAny()]
-        return [IsAdminOrStaffAdminFromAllLog()]
+        return [IsAdminFromAllLog()()]
     
     def post(self, request):
         serializer = ContactUsSerializer(data=request.data)
@@ -1507,3 +1508,52 @@ class ContactUsAPIView(APIView):
         contacts = ContactUs.objects.all().order_by('-id')
         serializer = ContactUsSerializer(contacts, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+class SolarInstallationQueryAPIView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.request.method == "POST":
+            return [AllowAny()]
+        return [IsAdminFromAllLog()]
+
+    # Create Query
+    def post(self, request):
+        serializer = SolarInstallationQuerySerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {"message": "Solar installation query submitted successfully!"},
+                status=status.HTTP_201_CREATED
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    # List All Queries (Admin Only)
+    def get(self, request):
+        queries = SolarInstallationQuery.objects.all().order_by('-id')
+        serializer = SolarInstallationQuerySerializer(queries, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    # Delete Query (Admin Only)
+    def delete(self, request):
+        query_id = request.data.get("id")
+
+        if not query_id:
+            return Response(
+                {"error": "Query ID is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            query = SolarInstallationQuery.objects.get(id=query_id)
+        except SolarInstallationQuery.DoesNotExist:
+            return Response(
+                {"error": "Query not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        query.delete()
+        return Response(
+            {"message": "Query deleted successfully"},
+            status=status.HTTP_204_NO_CONTENT
+        )
