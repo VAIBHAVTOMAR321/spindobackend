@@ -1,7 +1,7 @@
 # urls.py
 
 from django.urls import path
-from .views import CompanyDetailsItemAPIView, CustomerRegistrationView,BillingAPIView,ContactUsAPIView, LoginView, SendOTP, SolarInstallationQueryAPIView,StaffIssueAPIView, StaffAdminRegistrationView, VerifyOTP,get_all_vendors,DistrictBlockAPIView, VendorRegistrationView, get_services_categories, ServiceCategoryView,CustomTokenRefreshView,VendorRequestView,CustomerIssueAPIView,ServiceRequestAPIView,AssignVendorAPIView
+from .views import CompanyDetailsItemAPIView, CustomerRegistrationView,BillingAPIView,ContactUsAPIView, LoginView, ResetPassword, SendOTP, SolarInstallationQueryAPIView,StaffIssueAPIView, StaffAdminRegistrationView, VerifyOTP,get_all_vendors,DistrictBlockAPIView, VendorRegistrationView, get_services_categories, ServiceCategoryView,CustomTokenRefreshView,VendorRequestView,CustomerIssueAPIView,ServiceRequestAPIView,AssignVendorAPIView
 
 urlpatterns = [
 
@@ -23,6 +23,7 @@ urlpatterns = [
     path("contact-us/", ContactUsAPIView.as_view(), name="contact-us-api"),
     path('solar-query/', SolarInstallationQueryAPIView.as_view(),name="solar-query"),
     path('company-details/', CompanyDetailsItemAPIView.as_view(),name="company-details"),
-     path('send-otp/', SendOTP.as_view(), name='send_otp'),
+    path('send-otp/', SendOTP.as_view(), name='send_otp'),
     path('verify-otp/', VerifyOTP.as_view(), name='verify_otp'),
+    path('reset/password/',ResetPassword.as_view(),name="reset-password")
 ]

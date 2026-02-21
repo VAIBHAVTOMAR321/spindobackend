@@ -1,4 +1,9 @@
-# views.py
+import random
+import requests
+from shlex import quote
+from django.utils import timezone
+from datetime import datetime, timedelta
+from django.utils import timezone
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -7,7 +12,7 @@ from django.contrib.auth.hashers import make_password
 from .utils_billing import generate_bill_pdf
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 from rest_framework.permissions import AllowAny
-from .serializers import (CompanyDetailsItemSerializer, CustomerRegistrationSerializer, LoginSerializer, SolarInstallationQuerySerializer, StaffAdminRegistrationSerializer,StaffIssueSerializer,BillingSerializer, ContactUsSerializer,
+from .serializers import (CustomerRegistrationSerializer, LoginSerializer, StaffAdminRegistrationSerializer,StaffIssueSerializer,BillingSerializer, ContactUsSerializer,SolarInstallationQuerySerializer,CompanyDetailsItemSerializer,
                           RegisteredCustomerDetailSerializer, RegisteredCustomerListSerializer,
                           StaffAdminDetailSerializer, StaffAdminListSerializer,VendorRegistrationSerializer,ServiceCategorySerializer,ServiceRequestByUserSerializer,VendorRequestSerializer,CustomerIssueSerializer)
 from rest_framework.permissions import IsAuthenticated
@@ -19,7 +24,7 @@ from .permissions import (IsAdmin, IsAdminFromAllLog, IsAdminOrCustomerFromAllLo
                           STAFF_NOT_FOUND, UNIQUE_ID_REQUIRED, UNIQUE_ID_REQUIRED_FOR_CUSTOMER,
                           UNIQUE_ID_REQUIRED_FOR_STAFF, EMAIL_ALREADY_REGISTERED, 
                           MOBILE_NUMBER_ALREADY_REGISTERED)
-from .models import CompanyDetailsItem, SolarInstallationQuery, StaffAdmin, RegisteredCustomer, AllLog, Vendor,ServiceCategory,VendorRequest,CustomerIssue,ServiceRequestByUser,StaffIssue,DistrictBlock,Billing, ContactUs
+from .models import StaffAdmin, RegisteredCustomer, AllLog, Vendor,ServiceCategory,PhoneOTP,VendorRequest,CustomerIssue,ServiceRequestByUser,StaffIssue,DistrictBlock,Billing, ContactUs,SolarInstallationQuery,CompanyDetailsItem
 from django.db import transaction
 
 class CustomTokenRefreshView(APIView):
@@ -58,6 +63,7 @@ class CustomerRegistrationView(APIView):
                 "status": False,
                 "message": "Mobile number already registered for customer"
             }, status=status.HTTP_400_BAD_REQUEST)
+
 
         serializer = CustomerRegistrationSerializer(data=request.data)
         
@@ -910,20 +916,38 @@ class ServiceRequestAPIView(APIView):
             requests = ServiceRequestByUser.objects.filter(
                 unique_id=request.user.unique_id
             )
-
+    
         elif request.user.role in ["admin", "staffadmin"]:
             requests = ServiceRequestByUser.objects.all()
-
+    
         elif request.user.role == "vendor":
-            requests = ServiceRequestByUser.objects.filter(
-                assign_to=request.user.unique_id
-            )
-
+    
+            all_requests = ServiceRequestByUser.objects.all()
+            vendor_requests = []
+    
+            for service_request in all_requests:
+                if service_request.assignments:
+                    for entry in service_request.assignments:
+                        # entry format:
+                        # [[services], vendor_unique_id, vendor_name]
+                        if entry[1] == request.user.unique_id:
+                            vendor_requests.append(service_request)
+                            break
+    
+            requests = vendor_requests
+    
         else:
             return Response(
                 {"status": False, "message": "Not allowed"},
                 status=status.HTTP_403_FORBIDDEN
             )
+    
+        serializer = ServiceRequestByUserSerializer(requests, many=True)
+    
+        return Response(
+            {"status": True, "data": serializer.data},
+            status=status.HTTP_200_OK
+        )
 
         serializer = ServiceRequestByUserSerializer(requests, many=True)
 
@@ -987,8 +1011,140 @@ class ServiceRequestAPIView(APIView):
                 {"status": False, "message": "Request not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
+        if request.data.get("status") == "cancelled":
 
-        # ✅ VENDOR STATUS UPDATE LOGIC
+            # ===============================
+            # ✅ ROLE CHECK
+            # ===============================
+            if request.user.role not in ["customer", "staffadmin"]:
+                return Response(
+                    {"status": False, "message": "Not allowed to cancel"},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        
+            # ===============================
+            # ✅ SCHEDULE CHECK
+            # ===============================
+            if not service.schedule_date or not service.schedule_time:
+                return Response(
+                    {"status": False, "message": "Schedule not set"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+            scheduled_datetime = datetime.combine(
+                service.schedule_date,
+                service.schedule_time
+            )
+        
+            now = datetime.now()
+        
+            if now > scheduled_datetime - timedelta(hours=1):
+                return Response(
+                    {"status": False, "message": "Cannot cancel within 1 hour of schedule"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+            # ===============================
+            # ✅ HANDLE MULTIPLE VENDOR IDS
+            # ===============================
+            vendor_ids_to_cancel = request.data.get("vendor_unique_id", [])
+        
+            if isinstance(vendor_ids_to_cancel, str):
+                vendor_ids_to_cancel = [vendor_ids_to_cancel]
+        
+            # ===============================
+            # ✅ IF NO ASSIGNMENTS → DIRECT CANCEL
+            # ===============================
+            if not service.assignments:
+                service.status = "cancelled"
+                service.save()
+        
+                serializer = ServiceRequestByUserSerializer(service)
+                return Response(
+                    {"status": True, "data": serializer.data},
+                    status=status.HTTP_200_OK
+                )
+        
+            # ===============================
+            # ✅ UPDATE ASSIGNMENTS
+            # ===============================
+            updated_assignments = []
+            cancelled_vendor_ids = []
+        
+            for entry in service.assignments:
+                vendor_unique_id = entry[1]
+                current_status = entry[3]
+        
+                if vendor_unique_id in vendor_ids_to_cancel and current_status != "cancelled":
+                    entry[3] = "cancelled"
+                    cancelled_vendor_ids.append(vendor_unique_id)
+        
+                updated_assignments.append(entry)
+        
+            service.assignments = updated_assignments
+        
+            # ===============================
+            # ✅ SEND SMS ONLY TO CANCELLED VENDORS
+            # ===============================
+            if cancelled_vendor_ids:
+
+                cancelled_vendors = AllLog.objects.filter(
+                    unique_id__in=cancelled_vendor_ids,
+                    role="vendor"
+                )
+            
+                message = f"Service Request {service.request_id} has been cancelled. Regards-ICDS Technical"
+                encoded_message = quote(message)
+            
+                for vendor in cancelled_vendors:
+                    if vendor.phone:
+            
+                        url = (
+                            f"http://bulksms.saakshisoftware.com/api/mt/SendSMS"
+                            f"?user=Brainrock"
+                            f"&password=123456"
+                            f"&senderid=BCSINF"
+                            f"&channel=trans"
+                            f"&DCS=0"
+                            f"&flashsms=0"
+                            f"&number={vendor.phone}"   # use real vendor phone
+                            f"&text={encoded_message}"
+                            f"&route=04"
+                            f"&DLTTemplateId=1207163827265054435"
+                            f"&PEID=1201163222226675668"
+                        )
+            
+                        try:
+                            response = requests.get(url, timeout=100)
+            
+                            print("SMS Response:", response.status_code, response.text)
+            
+                            if response.status_code != 200:
+                                print("SMS failed for:", vendor.phone)
+            
+                        except Exception as e:
+                            print("SMS sending failed:", str(e)) # prevent crash if SMS fails
+        
+            # ===============================
+            # ✅ FINAL STATUS CHECK
+            # ===============================
+            if service.assignments:
+
+                all_cancelled = all(entry[3] == "cancelled" for entry in service.assignments)
+                all_completed = all(entry[3] == "completed" for entry in service.assignments)
+            
+                if all_completed:
+                    service.status = "completed"
+            
+                elif all_cancelled:
+                    service.status = "cancelled"
+            
+                else:
+                    service.status = "assigned"
+            
+            else:
+                service.status = "cancelled"
+                # ✅ VENDOR STATUS UPDATE LOGIC
         if request.user.role == "vendor":
 
             vendor_unique_id = request.data.get("vendor_unique_id")
@@ -1016,9 +1172,11 @@ class ServiceRequestAPIView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # ✅ Collect completed services from assignments
+        
             completed_services = []
+            cancelled_services = []
 
+           
             for entry in service.assignments:
                 services_list = entry[0]     # list of services
                 vendor_status = entry[3]
@@ -1026,13 +1184,19 @@ class ServiceRequestAPIView(APIView):
                 if vendor_status == "completed":
                     completed_services.extend(services_list)
 
-            # ✅ Check if ALL requested services are completed
-            all_services_completed = all(
-                req_service in completed_services
+                elif vendor_status == "cancelled":
+                    cancelled_services.extend(services_list)
+
+           
+            closed_services = set(completed_services) | set(cancelled_services)
+
+          
+            all_services_closed = all(
+                req_service in closed_services
                 for req_service in service.request_for_services
             )
 
-            if all_services_completed:
+            if all_services_closed:
                 service.status = "completed"
             else:
                 service.status = "assigned"
@@ -1044,7 +1208,7 @@ class ServiceRequestAPIView(APIView):
                 status=status.HTTP_200_OK
             )
 
-        # ✅ OTHER USERS (Admin/Customer/etc)
+        
         serializer = ServiceRequestByUserSerializer(
             service,
             data=request.data,
@@ -1063,7 +1227,9 @@ class ServiceRequestAPIView(APIView):
             {"status": False, "errors": serializer.errors},
             status=status.HTTP_400_BAD_REQUEST
         )
-        
+
+
+    # ðŸ”¹ DELETE (Admin Only)
     def delete(self, request):
 
         request_id = request.data.get("id")
@@ -1150,7 +1316,8 @@ class AssignVendorAPIView(APIView):
                 service_list,
                 vendor_unique_id,
                 vendor_obj.username,
-                "assigned"
+                "assigned",
+                 vendor_obj.mobile_number
             ]
 
             service_request.assignments.append(new_entry)
@@ -1162,11 +1329,12 @@ class AssignVendorAPIView(APIView):
             {"status": True, "message": "Vendors assigned successfully"},
             status=status.HTTP_200_OK
         )
+
 @api_view(['GET'])
 def get_services_categories(request):
 
     # Fetch only accepted records
-    services = ServiceCategory.objects.filter(status='accepted')
+    services = ServiceCategory.objects.filter(status='published')
 
     category_dict = {}
 
@@ -1197,7 +1365,6 @@ def get_services_categories(request):
     )
 @api_view(['GET'])
 def get_all_vendors(request):
-
     vendors = Vendor.objects.filter(is_active=True).values('unique_id','username','address','category')
 
     return Response(
@@ -1493,7 +1660,7 @@ class ContactUsAPIView(APIView):
     def get_permissions(self):
         if self.request.method == "POST":
             return [AllowAny()]
-        return [IsAdminFromAllLog()()]
+        return [IsAdminFromAllLog()]
     
     def post(self, request):
         serializer = ContactUsSerializer(data=request.data)
@@ -1555,14 +1722,16 @@ class SolarInstallationQueryAPIView(APIView):
         query.delete()
         return Response(
             {"message": "Query deleted successfully"},
-            status=status.HTTP_204_NO_CONTENT
+            status=status.HTTP_200_OK
         )
+        
+        
 class CompanyDetailsItemAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
 
     def get_permissions(self):
-        if self.request.method == "POST":
+        if self.request.method == "GET":
             return [AllowAny()]
         return [IsAdminFromAllLog()]
 
@@ -1634,6 +1803,7 @@ class CompanyDetailsItemAPIView(APIView):
             {"message": "Company details item deleted successfully!"},
             status=status.HTTP_204_NO_CONTENT
         )
+        
 class SendOTP(APIView):
     authentication_classes = []
     permission_classes = []
@@ -1721,3 +1891,53 @@ class VerifyOTP(APIView):
         except PhoneOTP.DoesNotExist:
             return Response({"success": False, "message": "Phone number not found"}, status=status.HTTP_404_NOT_FOUND)
         
+class ResetPassword(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        phone = request.data.get("phone")
+        role = request.data.get("role")
+        new_password = request.data.get("new_password")
+
+        if not phone or not role or not new_password:
+            return Response(
+                {"success": False, "message": "Phone, role and new password required"},
+                status=400
+            )
+
+        try:
+            otp_entry = PhoneOTP.objects.get(phone_number=phone)
+
+            if not otp_entry.is_verified:
+                return Response(
+                    {"success": False, "message": "OTP not verified"},
+                    status=400
+                )
+
+            user = AllLog.objects.get(phone=phone, role=role)
+
+      
+            user.password = make_password(new_password)
+            user.save()
+
+          
+            otp_entry.is_verified = False
+            otp_entry.save()
+
+            return Response(
+                {"success": True, "message": "Password reset successfully"},
+                status=200
+            )
+
+        except PhoneOTP.DoesNotExist:
+            return Response(
+                {"success": False, "message": "OTP not found"},
+                status=404
+            )
+
+        except AllLog.DoesNotExist:
+            return Response(
+                {"success": False, "message": "User not found"},
+                status=404
+            )
