@@ -7,7 +7,7 @@ from django.contrib.auth.hashers import make_password
 from .utils_billing import generate_bill_pdf
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 from rest_framework.permissions import AllowAny
-from .serializers import (CustomerRegistrationSerializer, LoginSerializer, SolarInstallationQuerySerializer, StaffAdminRegistrationSerializer,StaffIssueSerializer,BillingSerializer, ContactUsSerializer,
+from .serializers import (CompanyDetailsItemSerializer, CustomerRegistrationSerializer, LoginSerializer, SolarInstallationQuerySerializer, StaffAdminRegistrationSerializer,StaffIssueSerializer,BillingSerializer, ContactUsSerializer,
                           RegisteredCustomerDetailSerializer, RegisteredCustomerListSerializer,
                           StaffAdminDetailSerializer, StaffAdminListSerializer,VendorRegistrationSerializer,ServiceCategorySerializer,ServiceRequestByUserSerializer,VendorRequestSerializer,CustomerIssueSerializer)
 from rest_framework.permissions import IsAuthenticated
@@ -19,7 +19,7 @@ from .permissions import (IsAdmin, IsAdminFromAllLog, IsAdminOrCustomerFromAllLo
                           STAFF_NOT_FOUND, UNIQUE_ID_REQUIRED, UNIQUE_ID_REQUIRED_FOR_CUSTOMER,
                           UNIQUE_ID_REQUIRED_FOR_STAFF, EMAIL_ALREADY_REGISTERED, 
                           MOBILE_NUMBER_ALREADY_REGISTERED)
-from .models import SolarInstallationQuery, StaffAdmin, RegisteredCustomer, AllLog, Vendor,ServiceCategory,VendorRequest,CustomerIssue,ServiceRequestByUser,StaffIssue,DistrictBlock,Billing, ContactUs
+from .models import CompanyDetailsItem, SolarInstallationQuery, StaffAdmin, RegisteredCustomer, AllLog, Vendor,ServiceCategory,VendorRequest,CustomerIssue,ServiceRequestByUser,StaffIssue,DistrictBlock,Billing, ContactUs
 from django.db import transaction
 
 class CustomTokenRefreshView(APIView):
@@ -1557,3 +1557,167 @@ class SolarInstallationQueryAPIView(APIView):
             {"message": "Query deleted successfully"},
             status=status.HTTP_204_NO_CONTENT
         )
+class CompanyDetailsItemAPIView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.request.method == "POST":
+            return [AllowAny()]
+        return [IsAdminFromAllLog()]
+
+
+    def post(self, request):
+        serializer = CompanyDetailsItemSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {"message": "Company details item created successfully!"},
+                status=status.HTTP_201_CREATED
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+    def get(self, request):
+        items = CompanyDetailsItem.objects.all().order_by('-id')
+        serializer = CompanyDetailsItemSerializer(items, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    # Update (Using request.data.get("id"))
+    def put(self, request):
+        item_id = request.data.get("id")
+
+        if not item_id:
+            return Response(
+                {"error": "Item ID is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            item = CompanyDetailsItem.objects.get(id=item_id)
+        except CompanyDetailsItem.DoesNotExist:
+            return Response(
+                {"error": "Item not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        serializer = CompanyDetailsItemSerializer(item, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {"message": "Company details item updated successfully!"},
+                status=status.HTTP_200_OK
+            )
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    # Delete (Using request.data.get("id"))
+    def delete(self, request):
+        item_id = request.data.get("id")
+
+        if not item_id:
+            return Response(
+                {"error": "Item ID is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            item = CompanyDetailsItem.objects.get(id=item_id)
+        except CompanyDetailsItem.DoesNotExist:
+            return Response(
+                {"error": "Item not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        item.delete()
+        return Response(
+            {"message": "Company details item deleted successfully!"},
+            status=status.HTTP_204_NO_CONTENT
+        )
+class SendOTP(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        phone = request.data.get('phone')
+
+        if not phone or not phone.isdigit():
+            return Response({"success": False, "message": "Valid phone number required"}, status=400)
+
+        # Generate OTP
+        
+        otp = str(random.randint(100000, 999999))
+        message = f"Your onetime OTP is {otp} Regards-ICDS Technical"
+        encoded_message = quote(message)  # URL encode the message
+
+        # Build the URL (like PHP curl)
+        url = (
+            f"http://bulksms.saakshisoftware.com/api/mt/SendSMS"
+            f"?user=Brainrock"
+            f"&password=123456"
+            f"&senderid=BCSINF"
+            f"&channel=trans"
+            f"&DCS=0"
+            f"&flashsms=0"
+            f"&number={phone}"
+            f"&text={encoded_message}"
+            f"&route=04"
+            f"&DLTTemplateId=1207163827265054435"
+            f"&PEID=1201163222226675668"
+        )
+
+        try:
+            response = requests.get(url, timeout=100000)
+
+            if response.status_code == 200:
+                # Save OTP to DB
+                try:
+                    otp_entry = PhoneOTP.objects.get(phone_number=phone)
+                    otp_entry.otp_code = otp
+                    otp_entry.created_at = timezone.now()
+                    otp_entry.is_verified = False
+                    otp_entry.save()
+                except PhoneOTP.DoesNotExist:
+                    PhoneOTP.objects.create(
+                        phone_number=phone,
+                        otp_code=otp,
+                        is_verified=False,
+                        created_at=timezone.now()
+                    )
+
+                return Response({"success": True, "message": "OTP sent successfully"}, status=200)
+
+            else:
+                return Response({"success": False, "message": "SMS gateway error"}, status=500)
+
+        except Exception as e:
+            print("OTP sending failed:", str(e))
+            return Response({"success": False, "message": "OTP sending failed (network error)"}, status=500)
+        
+
+class VerifyOTP(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        phone = request.data.get('phone')
+        otp = request.data.get('otp')
+
+        if not phone or not otp:
+            return Response({"success": False, "message": "Phone and OTP are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            otp_entry = PhoneOTP.objects.get(phone_number=phone)
+
+            if otp_entry.otp_code == otp:
+                otp_entry.is_verified = True
+                otp_entry.save()
+                # Also update AllLog.verified for this phone number (ensure update is committed)
+               
+                return Response({"success": True, "message": "OTP verified successfully"}, status=status.HTTP_200_OK)
+            else:
+                return Response({"success": False, "message": "Invalid OTP"}, status=status.HTTP_400_BAD_REQUEST)
+
+        except PhoneOTP.DoesNotExist:
+            return Response({"success": False, "message": "Phone number not found"}, status=status.HTTP_404_NOT_FOUND)
+        

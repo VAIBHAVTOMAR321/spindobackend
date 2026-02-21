@@ -408,6 +408,7 @@ class ContactUs(models.Model):
         
 
 class SolarInstallationQuery(models.Model):
+    query_id = models.CharField(max_length=20, unique=True, blank=True, null=True)
     full_name = models.CharField(max_length=100,blank=True, null=True)
     email = models.EmailField(blank=True, null=True)
     mobile_number = models.CharField(max_length=15,blank=True, null=True)
@@ -415,4 +416,49 @@ class SolarInstallationQuery(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     def __str__(self):
         return f"{self.full_name} - {self.subject}"
+    def save(self, *args, **kwargs):
+        if not self.query_id:
+            last_query = SolarInstallationQuery.objects.order_by('-id').first()
+            if last_query and last_query.query_id:
+                last_number = int(last_query.query_id.split('-')[1])
+                new_number = last_number + 1
+            else:
+                new_number = 1
+
+            self.query_id = f"QUERY-{new_number:04d}"
+
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.full_name} ({self.query_id})"
+class CompanyDetailsItem(models.Model):
+    company_name = models.CharField(max_length=255, blank=True, null=True)
+    address = models.TextField(blank=True, null=True)
+    email = models.EmailField(blank=True, null=True)
+    phone = models.CharField(max_length=15, blank=True, null=True)
+    logo = models.ImageField(upload_to="company_logos/", blank=True, null=True)
+    profile_link=models.JSONField(default=list, blank=True)  # JSON field with default empty list
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+    def __str__(self):
+        return self.company_name
         
+
+class PhoneOTP(models.Model):
+    phone_number = models.CharField(max_length=15, unique=True)
+    otp_code = models.CharField(max_length=6, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_verified = models.BooleanField(default=False)
+    created_by_name = models.CharField(max_length=100, null=True, blank=True)
+    updated_by_name = models.CharField(max_length=100, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"{self.phone_number} - OTP: {self.otp_code}"
+
+    class Meta:
+        managed=True
+        db_table='phone_otp'
