@@ -3,7 +3,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.hashers import check_password, make_password
 from rest_framework import serializers
 from django.db import transaction
-from .models import AllLog, CompanyDetailsItem, RegisteredCustomer, ServiceCategory, SolarInstallationQuery, StaffAdmin, Vendor,VendorRequest,CustomerIssue,ServiceRequestByUser,StaffIssue,Billing,ContactUs
+from .models import AllLog, CompanyDetailsItem, RegisteredCustomer, ServiceBill, ServiceCategory, SolarInstallationQuery, StaffAdmin, Vendor,VendorRequest,CustomerIssue,ServiceRequestByUser,StaffIssue,Billing,ContactUs
 
 
 
@@ -236,3 +236,7 @@ class CompanyDetailsItemSerializer(serializers.ModelSerializer):
     class Meta:
         model=CompanyDetailsItem
         fields="__all__"
+class ServiceBillSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ServiceBill
+        fields = "__all__"

@@ -462,3 +462,19 @@ class PhoneOTP(models.Model):
     class Meta:
         managed=True
         db_table='phone_otp'
+
+class ServiceBill(models.Model):
+    title = models.CharField(max_length=255,blank=True, null=True)
+    company_name = models.CharField(max_length=255, blank=True, null=True)
+    regards = models.CharField(max_length=255, blank=True, null=True)
+    gst_number = models.CharField(max_length=20,blank=True, null=True)
+    firm_name = models.CharField(max_length=255,blank=True, null=True)
+    bill_date = models.DateField(blank=True, null=True)
+    file = models.FileField(upload_to="service_bills/",blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey('AllLog', on_delete=models.SET_NULL, null=True, to_field='unique_id', related_name="bill_created_by")
+    updated_by = models.ForeignKey('AllLog', on_delete=models.SET_NULL, null=True, to_field='unique_id', related_name="bill_updated_by")
+
+    def __str__(self):
+        return self.title

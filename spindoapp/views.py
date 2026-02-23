@@ -12,7 +12,7 @@ from django.contrib.auth.hashers import make_password
 from .utils_billing import generate_bill_pdf
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 from rest_framework.permissions import AllowAny
-from .serializers import (CustomerRegistrationSerializer, LoginSerializer, StaffAdminRegistrationSerializer,StaffIssueSerializer,BillingSerializer, ContactUsSerializer,SolarInstallationQuerySerializer,CompanyDetailsItemSerializer,
+from .serializers import (CustomerRegistrationSerializer, LoginSerializer, ServiceBillSerializer, StaffAdminRegistrationSerializer,StaffIssueSerializer,BillingSerializer, ContactUsSerializer,SolarInstallationQuerySerializer,CompanyDetailsItemSerializer,
                           RegisteredCustomerDetailSerializer, RegisteredCustomerListSerializer,
                           StaffAdminDetailSerializer, StaffAdminListSerializer,VendorRegistrationSerializer,ServiceCategorySerializer,ServiceRequestByUserSerializer,VendorRequestSerializer,CustomerIssueSerializer)
 from rest_framework.permissions import IsAuthenticated
@@ -24,7 +24,7 @@ from .permissions import (IsAdmin, IsAdminFromAllLog, IsAdminOrCustomerFromAllLo
                           STAFF_NOT_FOUND, UNIQUE_ID_REQUIRED, UNIQUE_ID_REQUIRED_FOR_CUSTOMER,
                           UNIQUE_ID_REQUIRED_FOR_STAFF, EMAIL_ALREADY_REGISTERED, 
                           MOBILE_NUMBER_ALREADY_REGISTERED)
-from .models import StaffAdmin, RegisteredCustomer, AllLog, Vendor,ServiceCategory,PhoneOTP,VendorRequest,CustomerIssue,ServiceRequestByUser,StaffIssue,DistrictBlock,Billing, ContactUs,SolarInstallationQuery,CompanyDetailsItem
+from .models import ServiceBill, StaffAdmin, RegisteredCustomer, AllLog, Vendor,ServiceCategory,PhoneOTP,VendorRequest,CustomerIssue,ServiceRequestByUser,StaffIssue,DistrictBlock,Billing, ContactUs,SolarInstallationQuery,CompanyDetailsItem
 from django.db import transaction
 
 class CustomTokenRefreshView(APIView):
@@ -1942,3 +1942,68 @@ class ResetPassword(APIView):
                 {"success": False, "message": "User not found"},
                  status=status.HTTP_404_NOT_FOUND
             )
+class ServiceBillAPIView(APIView):
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsAuthenticated, IsAdminFromAllLog]
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [IsAdminOrStaffAdminFromAllLog()]
+        if self.request.method in ["POST", "PUT"]:
+            return [IsStaffAdminFromAllLog()]
+        elif self.request.method =="DELETE":
+            return [IsAdminFromAllLog()]
+        return []
+    def get(self, request):
+        item_id = request.query_params.get("id")
+        if item_id:
+            try:
+                item = ServiceBill.objects.get(id=item_id)
+                serializer = ServiceBillSerializer(item)
+                return Response({"success": True, "data": serializer.data})
+            except ServiceBill.DoesNotExist:
+                return Response({"success": False, "message": "Service bill not found"}, status=404)
+
+        items = ServiceBill.objects.all().order_by("-created_at")
+        serializer = ServiceBillSerializer(items, many=True)
+        return Response({"success": True, "data": serializer.data})
+
+    def post(self, request):
+        serializer = ServiceBillSerializer(data=request.data)
+        if serializer.is_valid():
+            user_log = AllLog.objects.filter(unique_id=request.user.unique_id).first()
+            if not user_log:
+                return Response({"success": False, "message": "Authenticated user not found in AllLog"}, status=400)
+            serializer.save(created_by=user_log)
+            return Response({"success": True, "message": "Service bill created successfully"}, status=201)
+        return Response({"success": False, "errors": serializer.errors}, status=400)
+
+    def put(self, request):
+        item_id = request.data.get("id")
+        if not item_id:
+            return Response({"success": False, "message": "Item ID is required"}, status=400)
+
+        try:
+            item = ServiceBill.objects.get(id=item_id)
+        except ServiceBill.DoesNotExist:
+            return Response({"success": False, "message": "Service bill not found"}, status=404)
+
+        serializer = ServiceBillSerializer(item, data=request.data, partial=True)
+        if serializer.is_valid():
+            user_log = AllLog.objects.filter(unique_id=request.user.unique_id).first()
+            if not user_log:
+                return Response({"success": False, "message": "Authenticated user not found in AllLog"}, status=400)
+            serializer.save(updated_by=user_log)
+            return Response({"success": True, "message": "Service bill updated successfully"})
+        return Response({"success": False, "errors": serializer.errors}, status=400)
+
+    def delete(self, request):
+        item_id = request.data.get("id")
+        if not item_id:
+            return Response({"success": False, "message": "Item ID is required"}, status=400)
+
+        try:
+            item = ServiceBill.objects.get(id=item_id)
+            item.delete()
+            return Response({"success": True, "message": "Service bill deleted"})
+        except ServiceBill.DoesNotExist:
+            return Response({"success": False, "message": "Service bill not found"}, status=404)
