@@ -156,7 +156,8 @@ class Vendor(models.Model):
     is_active = models.BooleanField(default=False)  # Vendor is inactive by default
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
+    created_by = models.ForeignKey('AllLog',on_delete=models.SET_NULL,null=True,blank=True, to_field='unique_id',related_name="vendor_created_by")
+    
     def save(self, *args, **kwargs):
         if not self.unique_id:
             last_vendor = Vendor.objects.order_by('-id').first()
@@ -205,7 +206,6 @@ class VendorRequest(models.Model):
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
     def __str__(self):
         return f"{self.title} ({self.vendor.unique_id})"
     def save(self, *args, **kwargs):
@@ -349,28 +349,39 @@ class DistrictBlock(models.Model):
         return f"{self.state} - {self.district} - {self.block}"
         
         
+from django.db import models
+
 class Billing(models.Model):
 
-    bill_id = models.CharField(max_length=30, unique=True, blank=True)
-    vendor_id = models.CharField(max_length=70,blank=True, null=True)
-    payment_id = models.CharField(max_length=50,blank=True, null=True)
+    # Multi-line addresses
+    address_1 = models.JSONField(default=list, blank=True)
+    address_2 = models.JSONField(default=list, blank=True)
+    address_3 = models.JSONField(default=list, blank=True)
 
-    customer_name = models.CharField(max_length=80,blank=True, null=True)
-    cust_mobile = models.CharField(max_length=15,blank=True, null=True)
-
-    service_type = models.CharField(max_length=30,blank=True, null=True)
-    service_des = models.CharField(max_length=100,blank=True, null=True)
-
-    amount = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
-    gst = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
-    total_payment = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    bill_items=models.JSONField(default=list, blank=True, null=True)
-    payment_type = models.CharField(max_length=50,blank=True, null=True)
+    # Meta details
+    invoice_no = models.JSONField(default=list, blank=True)
+    bill_id=models.CharField(unique=True,blank=True,null=True,max_length=200)
+    delv_note = models.CharField(max_length=255, blank=True, null=True)
+    ref_no_date = models.DateField(blank=True, null=True)
+    buyer_ord_no = models.CharField(max_length=255, blank=True, null=True)
+    dispatch_doc_no = models.CharField(max_length=255, blank=True, null=True)
+    dated_1 = models.CharField(max_length=255, blank=True, null=True)
+    mode_of_pay = models.CharField(max_length=255, blank=True, null=True)
+    other_ref = models.CharField(max_length=255, blank=True, null=True)
+    dated_date = models.DateField(blank=True, null=True)
+    del_note_date = models.DateField(blank=True, null=True)
     bill_pdf = models.FileField(upload_to='bills/', blank=True, null=True)
-    bill_date_time= models.DateTimeField(blank=True, null=True)
+    # Repeating sections
+    bill_item = models.JSONField(default=list, blank=True)
+    bank_detail = models.JSONField(default=list, blank=True)
+
+    amount_in_words = models.TextField(blank=True, null=True)
+    authorized_name = models.CharField(max_length=255, blank=True, null=True)
+
+    
     created_at = models.DateTimeField(auto_now_add=True)
 
-    status = models.CharField(max_length=30)
+    
     def save(self, *args, **kwargs):
         if not self.bill_id:
             current_year = datetime.now().year  # ðŸ‘ˆ Get current year

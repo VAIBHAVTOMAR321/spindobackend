@@ -492,7 +492,15 @@ class VendorRegistrationView(APIView):
 
         serializer = VendorRegistrationSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
+            user_log = AllLog.objects.filter(unique_id=request.user.unique_id).first()
+            if not user_log:
+                return Response({
+                    "status": False,
+                    "message": "Authenticated user not found in AllLog"
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            serializer.save(created_by=user_log)  
+
             return Response({
                 "status": True,
                 "message": "Vendor registered successfully"
@@ -785,6 +793,8 @@ class VendorRequestView(APIView):
             return Response({"status": False, "message": "Request not found"}, status=status.HTTP_404_NOT_FOUND)
         if 'status' not in request.data:
             return Response({"status": False, "message": "status is required"}, status=status.HTTP_400_BAD_REQUEST)
+        if 'extra_remark' in request.data:
+            req.extra_remark = request.data['extra_remark']
         req.status = request.data['status']
         req.save()
         return Response({"status": True, "message": "Request status updated successfully"}, status=status.HTTP_200_OK)
@@ -1016,17 +1026,13 @@ class ServiceRequestAPIView(APIView):
             )
         if request.data.get("status") == "cancelled":
 
-            # ===============================
-            # ✅ ROLE CHECK
-            # ===============================
             if request.user.role not in ["customer", "staffadmin"]:
                 return Response(
                     {"status": False, "message": "Not allowed to cancel"},
                     status=status.HTTP_403_FORBIDDEN
                 )
         
-            # ===============================
-            # ✅ SCHEDULE CHECK
+           
             # ===============================
             if not service.schedule_date or not service.schedule_time:
                 return Response(
@@ -1126,9 +1132,7 @@ class ServiceRequestAPIView(APIView):
                         except Exception as e:
                             print("SMS sending failed:", str(e)) # prevent crash if SMS fails
         
-            # ===============================
-            # ✅ FINAL STATUS CHECK
-            # ===============================
+            
             if service.assignments:
 
                 all_cancelled = all(entry[3] == "cancelled" for entry in service.assignments)
